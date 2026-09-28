@@ -31,8 +31,8 @@ export interface DockBox {
   currentTruck: CurrentTruckState | null;
   lastSession: LastSessionState | null;
   // Parâmetros de calibração fina de detecção:
-  detectionCriteria: 'centroid' | 'ground' | 'overlap'; // default: 'ground'
-  overlapThreshold: number; // 0.1 a 0.8 (default 0.25)
+  detectionCriteria: 'auto' | 'close_dock' | 'ground' | 'centroid' | 'overlap'; // default: 'auto'
+  overlapThreshold: number; // 0.1 a 0.8 (default 0.20)
   entryDebounceFrames: number; // frames consecutivos necessários para confirmar entrada (default 3)
   exitGraceSeconds: number; // segundos de tolerância de ausência antes de considerar saída (default 3.0)
   targetClasses: string[]; // ['truck', 'bus', 'car']

@@ -173,7 +173,7 @@ export function calculatePolygonArea(polygon: Point2D[]): number {
 }
 
 /**
- * Calcula o overlap percentual entre a BoundingBox e o Polígono
+ * Calcula o percentual da Bounding Box do veículo que está dentro da vaga demarcada.
  */
 export function calculateBoxOverlapRatio(
   bboxNorm: [number, number, number, number],
@@ -201,56 +201,151 @@ export function calculateBoxOverlapRatio(
 }
 
 /**
+ * Calcula a taxa de cobertura da VAGA (quanto da vaga/boxe desenhado está coberto pelo caminhão).
+ * Essencial para câmeras instaladas perto da doca, onde o caminhão é maior que a tela ou fica parcialmente cortado pelo enquadramento.
+ */
+export function calculateDockCoverageRatio(
+  bboxNorm: [number, number, number, number],
+  polygonNorm: Point2D[],
+  gridResolution: number = 8
+): number {
+  if (polygonNorm.length < 3) return 0;
+  const [bx, by, bw, bh] = bboxNorm;
+  if (bw <= 0 || bh <= 0) return 0;
+
+  const minX = Math.min(...polygonNorm.map(p => p.x));
+  const maxX = Math.max(...polygonNorm.map(p => p.x));
+  const minY = Math.min(...polygonNorm.map(p => p.y));
+  const maxY = Math.max(...polygonNorm.map(p => p.y));
+  const polyW = maxX - minX;
+  const polyH = maxY - minY;
+
+  if (polyW <= 0 || polyH <= 0) return 0;
+
+  // Verificação rápida de colisão AABB (Axis-Aligned Bounding Box)
+  if (bx + bw < minX || bx > maxX || by + bh < minY || by > maxY) {
+    return 0;
+  }
+
+  let totalPolygonPoints = 0;
+  let coveredPoints = 0;
+
+  for (let ix = 0; ix < gridResolution; ix++) {
+    for (let iy = 0; iy < gridResolution; iy++) {
+      const px = minX + (ix + 0.5) * (polyW / gridResolution);
+      const py = minY + (iy + 0.5) * (polyH / gridResolution);
+
+      if (isPointInPolygon({ x: px, y: py }, polygonNorm)) {
+        totalPolygonPoints++;
+        if (px >= bx && px <= bx + bw && py >= by && py <= by + bh) {
+          coveredPoints++;
+        }
+      }
+    }
+  }
+
+  return totalPolygonPoints > 0 ? coveredPoints / totalPolygonPoints : 0;
+}
+
+/**
  * Avalia se o caminhão está dentro do Boxe com alta precisão
+ * Suporta tanto câmeras amplas (veículo inteiro) quanto câmeras próximas (caminhão maior que o enquadramento)
  */
 export function isTruckInsideDockBox(
   detection: TruckDetection,
   dockBox: DockBox
-): { isInside: boolean; overlap: number; reason: string } {
+): { isInside: boolean; overlap: number; dockCoverage: number; reason: string } {
   const { groundContact, centroid, normalizedBbox } = detection;
   const points = dockBox.points;
 
   if (points.length < 3) {
-    return { isInside: false, overlap: 0, reason: 'Polígono incompleto' };
+    return { isInside: false, overlap: 0, dockCoverage: 0, reason: 'Polígono incompleto' };
   }
 
-  const overlap = calculateBoxOverlapRatio(normalizedBbox, points, 8);
+  const [bx, by, bw, bh] = normalizedBbox;
+  const minX = Math.min(...points.map(p => p.x));
+  const maxX = Math.max(...points.map(p => p.x));
+  const minY = Math.min(...points.map(p => p.y));
+  const maxY = Math.max(...points.map(p => p.y));
+
+  // Filtro rápido AABB: se a caixa do caminhão sequer toca o retângulo envolvente do boxe
+  if (bx + bw < minX || bx > maxX || by + bh < minY || by > maxY) {
+    return { isInside: false, overlap: 0, dockCoverage: 0, reason: 'Fora da área do boxe' };
+  }
+
+  const truckOverlap = calculateBoxOverlapRatio(normalizedBbox, points, 8);
+  const dockCoverage = calculateDockCoverageRatio(normalizedBbox, points, 8);
   const isGroundInside = isPointInPolygon(groundContact, points);
   const isCentroidInside = isPointInPolygon(centroid, points);
 
-  const threshold = dockBox.overlapThreshold ?? 0.25;
-  const criteria = dockBox.detectionCriteria ?? 'ground';
+  const criteria = dockBox.detectionCriteria || 'auto';
+  const threshold = dockBox.overlapThreshold ?? 0.20;
 
-  if (criteria === 'centroid') {
-    return {
-      isInside: isCentroidInside,
-      overlap,
-      reason: isCentroidInside ? 'Centroide dentro do boxe' : 'Centroide fora'
-    };
+  let isInside = false;
+  let reason = '';
+
+  switch (criteria) {
+    case 'close_dock': {
+      // Modo Doca Próxima: O caminhão cobriu a área da doca/vaga (mesmo que cabine/rodas estejam fora)
+      isInside = dockCoverage >= threshold;
+      reason = isInside
+        ? `Doca ocupada: ${(dockCoverage * 100).toFixed(0)}% da vaga coberta`
+        : `Doca livre (cobertura ${(dockCoverage * 100).toFixed(0)}% < ${(threshold * 100).toFixed(0)}%)`;
+      break;
+    }
+    case 'ground': {
+      // Modo Pátio Amplo: Rodas no solo da vaga e sobreposição
+      isInside = isGroundInside && (truckOverlap >= threshold || isCentroidInside);
+      reason = isInside
+        ? `Rodas na vaga (${(truckOverlap * 100).toFixed(0)}% overlap)`
+        : isGroundInside
+        ? 'Rodas na vaga, aguardando alinhamento'
+        : 'Veículo fora da vaga (rodas fora)';
+      break;
+    }
+    case 'centroid': {
+      isInside = isCentroidInside;
+      reason = isInside ? 'Centro do veículo dentro do boxe' : 'Centro do veículo fora';
+      break;
+    }
+    case 'overlap': {
+      const maxRatio = Math.max(truckOverlap, dockCoverage);
+      isInside = maxRatio >= threshold;
+      reason = isInside
+        ? `Sobreposição ${(maxRatio * 100).toFixed(0)}% >= ${(threshold * 100).toFixed(0)}%`
+        : 'Sobreposição insuficiente';
+      break;
+    }
+    case 'auto':
+    default: {
+      // MODO INTELIGENTE HÍBRIDO (Recomendado):
+      // 1. Doca próxima: Veículo cobre >= 20% da vaga (ideal para câmeras de doca onde caminhão é enorme)
+      const isCoveringDock = dockCoverage >= threshold;
+      // 2. Câmera ampla: Rodas no solo da vaga
+      const isParkedInside = isGroundInside && (truckOverlap >= 0.15 || isCentroidInside);
+      // 3. Centroide dentro com qualquer cobertura substancial
+      const isCentroidDocked = isCentroidInside && (dockCoverage >= 0.15 || truckOverlap >= 0.15);
+
+      isInside = isCoveringDock || isParkedInside || isCentroidDocked;
+
+      reason = isCoveringDock
+        ? `Doca ocupada: ${(dockCoverage * 100).toFixed(0)}% da vaga coberta`
+        : isParkedInside
+        ? `Veículo estacionado: ${(truckOverlap * 100).toFixed(0)}% na vaga`
+        : isCentroidDocked
+        ? 'Veículo centralizado na vaga'
+        : isGroundInside
+        ? 'Rodas na vaga, alinhando...'
+        : 'Fora da vaga';
+      break;
+    }
   }
-
-  if (criteria === 'overlap') {
-    const isInside = overlap >= threshold;
-    return {
-      isInside,
-      overlap,
-      reason: isInside ? `Overlap ${(overlap * 100).toFixed(0)}% >= ${(threshold * 100).toFixed(0)}%` : 'Overlap insuficiente'
-    };
-  }
-
-  // CRITÉRIO RIGOROSO DE ALTA FIDELIDADE:
-  // 1. O ponto de contato das rodas com o solo DEVE estar estritamente dentro da vaga delimitada.
-  // 2. Além disso, pelo menos 28% da caixa do veículo deve estar dentro do boxe (evita ativação por borda).
-  const isInside = isGroundInside && (overlap >= Math.max(0.28, threshold) || isCentroidInside);
 
   return {
     isInside,
-    overlap,
-    reason: isInside 
-      ? `Confirmado: rodas no solo da vaga e ${(overlap * 100).toFixed(0)}% de área`
-      : isGroundInside
-      ? 'Rodas na vaga, mas área insuficiente'
-      : 'Veículo fora da área delimitada (rodas fora do boxe)'
+    overlap: Math.max(truckOverlap, dockCoverage),
+    dockCoverage,
+    reason
   };
 }
 

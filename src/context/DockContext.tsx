@@ -33,9 +33,9 @@ const DEFAULT_BOXES: DockBox[] = [
     status: 'empty',
     currentTruck: null,
     lastSession: null,
-    detectionCriteria: 'ground',
-    overlapThreshold: 0.25,
-    entryDebounceFrames: 3,
+    detectionCriteria: 'auto',
+    overlapThreshold: 0.20,
+    entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck', 'bus'],
   },
@@ -53,9 +53,9 @@ const DEFAULT_BOXES: DockBox[] = [
     status: 'empty',
     currentTruck: null,
     lastSession: null,
-    detectionCriteria: 'ground',
-    overlapThreshold: 0.25,
-    entryDebounceFrames: 3,
+    detectionCriteria: 'auto',
+    overlapThreshold: 0.20,
+    entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck', 'bus'],
   }
@@ -66,7 +66,7 @@ const DEFAULT_SETTINGS: DockSettings = {
   inferenceIntervalMs: 380,
   allowTruck: true,
   allowBus: true,
-  allowCar: false, // Por padrão docas monitoram apenas caminhões e veículos pesados
+  allowCar: true, // Habilitado globalmente para permitir controle granular por boxe
   soundAlerts: true,
   autoSaveSnapshots: false,
   targetStayMinutes: 25,
@@ -173,10 +173,13 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const savedBoxes = localStorage.getItem(STORAGE_KEY_BOXES);
       if (savedBoxes) {
         const parsed = JSON.parse(savedBoxes);
-        // Garante que todos os boxes tenham as classes corretas de veículos
+        // Garante que todos os boxes tenham critérios modernos compatíveis com câmeras próximas
         const updated = parsed.map((b: any) => ({
           ...b,
-          targetClasses: ['truck', 'bus', 'car'],
+          detectionCriteria: (!b.detectionCriteria || b.detectionCriteria === 'ground') ? 'auto' : b.detectionCriteria,
+          overlapThreshold: b.overlapThreshold !== undefined ? Math.min(b.overlapThreshold, 0.25) : 0.20,
+          entryDebounceFrames: b.entryDebounceFrames ?? 2,
+          targetClasses: b.targetClasses && b.targetClasses.length > 0 ? b.targetClasses : ['truck', 'bus'],
         }));
         setBoxes(updated);
       }

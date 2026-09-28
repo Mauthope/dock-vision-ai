@@ -154,11 +154,11 @@ export const DockVisionCanvas: React.FC = () => {
       color,
       points,
       cameraId: activeCameraId,
-      detectionCriteria: 'ground',
-      overlapThreshold: 0.25,
-      entryDebounceFrames: 3,
+      detectionCriteria: 'auto',
+      overlapThreshold: 0.20,
+      entryDebounceFrames: 2,
       exitGraceSeconds: 3.5,
-      targetClasses: ['truck'],
+      targetClasses: ['truck', 'bus'],
     });
 
     setDrawingMode(false);
@@ -715,7 +715,7 @@ export const DockVisionCanvas: React.FC = () => {
 
         {/* PAINEL FLUTUANTE DE EDIÇÃO DO BOXE SELECIONADO */}
         {selectedBox && !drawingMode && (
-          <div className="absolute top-4 left-4 z-20 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl backdrop-blur-xl flex flex-col gap-2.5 min-w-[240px] animate-in fade-in zoom-in-95 duration-150">
+          <div className="absolute top-4 left-4 z-20 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl backdrop-blur-xl flex flex-col gap-2.5 w-80 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-2rem)] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedBox.color }} />
@@ -758,8 +758,85 @@ export const DockVisionCanvas: React.FC = () => {
               </div>
             </div>
 
+            {/* Modo de Enquadramento da Câmera */}
+            <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold">Enquadramento da Câmera:</span>
+                <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                  {selectedBox.detectionCriteria === 'close_dock' ? '📷 Doca Próxima' : selectedBox.detectionCriteria === 'ground' ? '🔭 Pátio Amplo' : '⚡ Auto Híbrido'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  onClick={() => updateBox(selectedBox.id, { detectionCriteria: 'auto' })}
+                  className={`px-1.5 py-1.5 rounded text-[10px] font-semibold border text-center transition-colors ${
+                    (selectedBox.detectionCriteria || 'auto') === 'auto'
+                      ? 'bg-cyan-950 text-cyan-300 border-cyan-600 shadow-sm'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                  title="Detecta tanto visão de doca próxima quanto visão ampla de pátio"
+                >
+                  ⚡ Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateBox(selectedBox.id, { detectionCriteria: 'close_dock' })}
+                  className={`px-1.5 py-1.5 rounded text-[10px] font-semibold border text-center transition-colors ${
+                    selectedBox.detectionCriteria === 'close_dock'
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-600 shadow-sm'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                  title="Câmera próxima à doca: detecta mesmo quando a cabine fica fora do vídeo ou o caminhão corta a tela"
+                >
+                  📷 Doca Próxima
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateBox(selectedBox.id, { detectionCriteria: 'ground' })}
+                  className={`px-1.5 py-1.5 rounded text-[10px] font-semibold border text-center transition-colors ${
+                    selectedBox.detectionCriteria === 'ground'
+                      ? 'bg-purple-950 text-purple-300 border-purple-600 shadow-sm'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                  }`}
+                  title="Câmera ampla: exige caminhão inteiro e rodas no solo da vaga"
+                >
+                  🔭 Pátio Amplo
+                </button>
+              </div>
+              <p className="text-[9px] text-slate-400 leading-tight">
+                {selectedBox.detectionCriteria === 'close_dock'
+                  ? '📷 Doca Próxima: ativado quando a traseira/baú encosta na vaga, dispensando ver o caminhão inteiro.'
+                  : selectedBox.detectionCriteria === 'ground'
+                  ? '🔭 Pátio Amplo: exige o caminhão inteiro e suas rodas dentro da demarcação.'
+                  : '⚡ Híbrido Inteligente: ideal para qualquer distância, detecta atracamento em doca ou estacionamento completo.'}
+              </p>
+            </div>
+
+            {/* Sensibilidade / Cobertura Mínima da Vaga */}
+            <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold">Sensibilidade (Cobertura da Vaga):</span>
+                <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                  {Math.round((selectedBox.overlapThreshold ?? 0.20) * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="60"
+                step="5"
+                value={Math.round((selectedBox.overlapThreshold ?? 0.20) * 100)}
+                onChange={e => updateBox(selectedBox.id, { overlapThreshold: Number(e.target.value) / 100 })}
+                className="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+              />
+              <span className="text-[9px] text-slate-400">
+                Quanto da vaga desenhada precisa ser coberta pelo veículo para disparar (padrão: 20%).
+              </span>
+            </div>
+
             {/* Tipos de Veículo Permitidos no Boxe */}
-            <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-800">
+            <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-800">
               <span className="text-[10px] text-slate-400 uppercase font-semibold">Acionar com:</span>
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
