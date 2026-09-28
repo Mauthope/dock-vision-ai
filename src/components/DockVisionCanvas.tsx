@@ -494,13 +494,17 @@ export const DockVisionCanvas: React.FC = () => {
         const rw = bottomRight.x - topLeft.x;
         const rh = bottomRight.y - topLeft.y;
 
-        // Bounding Box Ciano com cantos cibernéticos
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)';
+        const isTruck = det.class === 'truck';
+        const isBus = det.class === 'bus';
+        const themeColor = isTruck ? '#06b6d4' : isBus ? '#8b5cf6' : '#f59e0b';
+
+        // Bounding Box temática
+        ctx.strokeStyle = `${themeColor}99`;
         ctx.lineWidth = 1.5;
         ctx.strokeRect(rx, ry, rw, rh);
 
         const cLen = 14;
-        ctx.strokeStyle = '#06b6d4';
+        ctx.strokeStyle = themeColor;
         ctx.lineWidth = 3;
         // Cantos
         ctx.beginPath();
@@ -526,17 +530,17 @@ export const DockVisionCanvas: React.FC = () => {
         ctx.arc(gPt.x, gPt.y, 7, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Badge de identificação padronizado para Docas
-        const label = `CAMINHÃO ${(det.score * 100).toFixed(0)}%`;
+        // Badge de identificação com classe autêntica
+        const label = `${(det.label || 'Veículo').toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
         ctx.font = 'bold 11px monospace';
         const labelW = ctx.measureText(label).width + 14;
 
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
+        ctx.fillStyle = themeColor;
         ctx.beginPath();
         ctx.roundRect(rx, Math.max(14, ry - 20), labelW, 18, 4);
         ctx.fill();
 
-        ctx.fillStyle = '#060a13';
+        ctx.fillStyle = isTruck ? '#060a13' : '#ffffff';
         ctx.fillText(label, rx + 7, Math.max(14, ry - 20) + 13);
       });
 
@@ -751,6 +755,59 @@ export const DockVisionCanvas: React.FC = () => {
                     style={{ backgroundColor: c }}
                   />
                 ))}
+              </div>
+            </div>
+
+            {/* Tipos de Veículo Permitidos no Boxe */}
+            <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold">Acionar com:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedBox.targetClasses || ['truck'];
+                    const next = current.includes('truck') ? current.filter(c => c !== 'truck') : [...current, 'truck'];
+                    if (next.length > 0) updateBox(selectedBox.id, { targetClasses: next });
+                  }}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                    (selectedBox.targetClasses || ['truck']).includes('truck')
+                      ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
+                      : 'bg-slate-900 text-slate-500 border-slate-800'
+                  }`}
+                >
+                  🚚 Caminhão
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedBox.targetClasses || ['truck'];
+                    const next = current.includes('bus') ? current.filter(c => c !== 'bus') : [...current, 'bus'];
+                    updateBox(selectedBox.id, { targetClasses: next });
+                  }}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                    (selectedBox.targetClasses || []).includes('bus')
+                      ? 'bg-purple-950 text-purple-300 border-purple-700'
+                      : 'bg-slate-900 text-slate-500 border-slate-800'
+                  }`}
+                >
+                  🚌 Ônibus/Van
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = selectedBox.targetClasses || ['truck'];
+                    const next = current.includes('car') ? current.filter(c => c !== 'car') : [...current, 'car'];
+                    updateBox(selectedBox.id, { targetClasses: next });
+                  }}
+                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                    (selectedBox.targetClasses || []).includes('car')
+                      ? 'bg-amber-950 text-amber-300 border-amber-700'
+                      : 'bg-slate-900 text-slate-500 border-slate-800'
+                  }`}
+                  title="Aceitar também carros comuns nesta vaga"
+                >
+                  🚗 Carro
+                </button>
               </div>
             </div>
 

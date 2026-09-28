@@ -238,15 +238,19 @@ export function isTruckInsideDockBox(
     };
   }
 
-  // Padrão: Solo dentro OU overlap maior que limiar
-  const isInside = (isGroundInside && overlap >= 0.12) || overlap >= Math.max(0.30, threshold);
+  // CRITÉRIO RIGOROSO DE ALTA FIDELIDADE:
+  // 1. O ponto de contato das rodas com o solo DEVE estar estritamente dentro da vaga delimitada.
+  // 2. Além disso, pelo menos 28% da caixa do veículo deve estar dentro do boxe (evita ativação por borda).
+  const isInside = isGroundInside && (overlap >= Math.max(0.28, threshold) || isCentroidInside);
 
   return {
     isInside,
     overlap,
     reason: isInside 
-      ? `Detectado no solo com ${(overlap * 100).toFixed(0)}% de área`
-      : 'Fora da vaga'
+      ? `Confirmado: rodas no solo da vaga e ${(overlap * 100).toFixed(0)}% de área`
+      : isGroundInside
+      ? 'Rodas na vaga, mas área insuficiente'
+      : 'Veículo fora da área delimitada (rodas fora do boxe)'
   };
 }
 

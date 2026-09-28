@@ -37,7 +37,7 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.25,
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck', 'bus', 'car'],
+    targetClasses: ['truck', 'bus'],
   },
   {
     id: 'box-2',
@@ -57,16 +57,16 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.25,
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck', 'bus', 'car'],
+    targetClasses: ['truck', 'bus'],
   }
 ];
 
 const DEFAULT_SETTINGS: DockSettings = {
   confidenceThreshold: 0.38,
-  inferenceIntervalMs: 400,
+  inferenceIntervalMs: 380,
   allowTruck: true,
   allowBus: true,
-  allowCar: true, // Caminhões frequentemente classificados como car pelo modelo MobileNet
+  allowCar: false, // Por padrão docas monitoram apenas caminhões e veículos pesados
   soundAlerts: true,
   autoSaveSnapshots: false,
   targetStayMinutes: 25,
@@ -335,12 +335,16 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const counters = boxCountersRef.current[box.id];
 
-      // Avalia se há caminhão dentro do boxe
+      // Avalia se há veículo permitido para este boxe dentro dele
       let foundInside: TruckDetection | null = null;
       let bestOverlap = 0;
+      const boxAllowed = box.targetClasses || ['truck', 'bus'];
 
       for (let i = 0; i < allowedDetections.length; i++) {
         const det = allowedDetections[i];
+        // Se o boxe não aceita essa classe de veículo, ignora!
+        if (!boxAllowed.includes(det.class)) continue;
+
         const evalRes = isTruckInsideDockBox(det, box);
         if (evalRes.isInside && evalRes.overlap > bestOverlap) {
           bestOverlap = evalRes.overlap;
@@ -368,7 +372,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 entryTime: now,
                 durationSeconds: 0,
                 confidence: foundInside.score,
-                label: foundInside.class,
+                label: foundInside.label || (foundInside.class === 'truck' ? 'Caminhão' : 'Veículo'),
                 lastSeenTime: now,
               }
             };

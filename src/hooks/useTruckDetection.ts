@@ -18,13 +18,12 @@ export interface CameraDeviceInfo {
 export function useTruckDetection({
   activeCamera,
   confidenceThreshold = 0.38,
-  inferenceIntervalMs = 400,
+  inferenceIntervalMs = 380,
   onDetections,
 }: UseTruckDetectionOptions) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const modelRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const inferCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [isLoadingModel, setIsLoadingModel] = useState<boolean>(true);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -34,13 +33,13 @@ export function useTruckDetection({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>(activeCamera?.deviceId || '');
   const [fps, setFps] = useState<number>(0);
 
-  // Armazena detecções em Ref para 60 FPS sem re-render no React
+  // Armazena detecções em Ref para 60 FPS sem re-render desnecessário no React
   const detectionsRef = useRef<TruckDetection[]>([]);
   const isDetectingRef = useRef<boolean>(false);
   const onDetectionsRef = useRef(onDetections);
   onDetectionsRef.current = onDetections;
 
-  // Carregar Modelo TensorFlow.js COCO-SSD
+  // Carregar Modelo TensorFlow.js COCO-SSD com aceleração WebGL
   useEffect(() => {
     let isMounted = true;
 
@@ -62,7 +61,7 @@ export function useTruckDetection({
 
         const cocoSsd = await import('@tensorflow-models/coco-ssd');
         const loadedModel = await cocoSsd.load({
-          base: 'lite_mobilenet_v2', // Modelo ultra-rápido para dispositivos móveis
+          base: 'lite_mobilenet_v2', // Ultra rápido e leve para mobile
         });
 
         if (isMounted) {
@@ -80,21 +79,12 @@ export function useTruckDetection({
 
     loadModel();
 
-    // Canvas offscreen padronizado em 224x224 (resolução nativa do MobileNet v2)
-    // Reduz o consumo de GPU mobile em 60%
-    if (typeof document !== 'undefined' && !inferCanvasRef.current) {
-      const c = document.createElement('canvas');
-      c.width = 224;
-      c.height = 224;
-      inferCanvasRef.current = c;
-    }
-
     return () => {
       isMounted = false;
     };
   }, []);
 
-  // Enumerate Câmeras
+  // Enumerate Câmeras Físicas
   const refreshDevices = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -123,7 +113,7 @@ export function useTruckDetection({
     setCameraActive(false);
   }, []);
 
-  // Iniciar Fonte de Vídeo (Otimizado para Mobile)
+  // Iniciar Fonte de Vídeo (Otimizado com limites reais para smartphone)
   const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError(null);
@@ -155,49 +145,30 @@ export function useTruckDetection({
 
     const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-    // Resoluções sob medida: 640x480 em celulares roda 4x mais rápido sem perder precisão
-    const idealW = isMobile ? 640 : 1280;
-    const idealH = isMobile ? 480 : 720;
-    const idealFps = isMobile ? 24 : 30;
+    // Resoluções controladas para não travar celulares
+    const videoConstraints: MediaTrackConstraints = isMobile
+      ? {
+          facingMode: { ideal: activeCamera.facingMode || 'environment' },
+          width: { ideal: 640, max: 640 },
+          height: { ideal: 480, max: 480 },
+          frameRate: { ideal: 24, max: 30 }
+        }
+      : {
+          facingMode: { ideal: activeCamera.facingMode || 'environment' },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30 }
+        };
+
+    if (selectedDeviceId) {
+      videoConstraints.deviceId = { exact: selectedDeviceId };
+    }
 
     try {
-      let stream: MediaStream | null = null;
-
-      if (selectedDeviceId) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: { exact: selectedDeviceId },
-              width: { ideal: idealW },
-              height: { ideal: idealH },
-              frameRate: { ideal: idealFps },
-            },
-            audio: false,
-          });
-        } catch (e) {
-          console.warn('Falha deviceId, usando padrão...', e);
-        }
-      }
-
-      if (!stream) {
-        const facing = activeCamera.facingMode || 'environment';
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: facing },
-              width: { ideal: idealW },
-              height: { ideal: idealH },
-              frameRate: { ideal: idealFps },
-            },
-            audio: false,
-          });
-        } catch (e) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
-        }
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false,
+      });
 
       streamRef.current = stream;
       refreshDevices();
@@ -210,7 +181,7 @@ export function useTruckDetection({
         await new Promise<void>((resolve) => {
           if (!videoRef.current) return resolve();
           videoRef.current.onloadedmetadata = () => resolve();
-          setTimeout(resolve, 600);
+          setTimeout(resolve, 500);
         });
 
         await videoRef.current.play().catch(() => {});
@@ -236,7 +207,7 @@ export function useTruckDetection({
     };
   }, [startCamera, stopCamera]);
 
-  // Loop de Inferência com Auto-Encadeamento Não-Bloqueante (Timeout Inteligente)
+  // Loop de Inferência com Auto-Encadeamento Não-Bloqueante
   useEffect(() => {
     if (!cameraActive) return;
 
@@ -267,72 +238,67 @@ export function useTruckDetection({
         }
 
         try {
-          const vWidth = video.videoWidth || 640;
-          const vHeight = video.videoHeight || 480;
+          const vWidth = video.videoWidth;
+          const vHeight = video.videoHeight;
 
-          // Renderiza no canvas 224x224 com interpolação rápida
-          let inputSource: HTMLVideoElement | HTMLCanvasElement = video;
-          const inferCanvas = inferCanvasRef.current;
-          if (inferCanvas) {
-            const inferCtx = inferCanvas.getContext('2d', { alpha: false });
-            if (inferCtx) {
-              inferCtx.drawImage(video, 0, 0, inferCanvas.width, inferCanvas.height);
-              inputSource = inferCanvas;
+          if (vWidth > 0 && vHeight > 0) {
+            // Executa predição DIRETO no elemento de vídeo via WebGL (zero distorção de aspecto!)
+            const predictions = await model.detect(video, 4, confidenceThreshold);
+
+            const vehicleDetections: TruckDetection[] = [];
+
+            for (let i = 0; i < predictions.length; i++) {
+              const p = predictions[i];
+              const cls = p.class.toLowerCase();
+
+              // FILTRO PRECISO DE CLASSES
+              if (cls === 'truck' || cls === 'bus' || cls === 'car') {
+                const [rx, ry, rw, rh] = p.bbox;
+
+                // Coordenadas normalizadas matematicamente exatas em relação ao vídeo real
+                const normalizedBbox: [number, number, number, number] = [
+                  Math.max(0, Math.min(1, rx / vWidth)),
+                  Math.max(0, Math.min(1, ry / vHeight)),
+                  Math.max(0, Math.min(1, rw / vWidth)),
+                  Math.max(0, Math.min(1, rh / vHeight)),
+                ];
+
+                const centroid = {
+                  x: normalizedBbox[0] + normalizedBbox[2] / 2,
+                  y: normalizedBbox[1] + normalizedBbox[3] / 2,
+                };
+
+                // Ponto exato de contato com o solo (onde as rodas tocam a vaga)
+                const groundContact = {
+                  x: normalizedBbox[0] + normalizedBbox[2] / 2,
+                  y: Math.min(1, normalizedBbox[1] + normalizedBbox[3] * 0.94),
+                };
+
+                // Identificação autêntica de cada veículo
+                let label = 'Carro';
+                if (cls === 'truck') {
+                  label = 'Caminhão';
+                } else if (cls === 'bus') {
+                  label = 'Ônibus/Van';
+                }
+
+                vehicleDetections.push({
+                  bbox: [rx, ry, rw, rh],
+                  normalizedBbox,
+                  class: cls, // 'truck' | 'bus' | 'car'
+                  label,
+                  score: p.score,
+                  centroid,
+                  groundContact,
+                });
+              }
             }
-          }
 
-          const predictions = await model.detect(inputSource, 6, confidenceThreshold);
+            detectionsRef.current = vehicleDetections;
 
-          const scaleX = inferCanvas ? vWidth / inferCanvas.width : 1;
-          const scaleY = inferCanvas ? vHeight / inferCanvas.height : 1;
-
-          const vehicleDetections: TruckDetection[] = [];
-
-          for (let i = 0; i < predictions.length; i++) {
-            const p = predictions[i];
-            const cls = p.class.toLowerCase();
-
-            // ACEITA 'truck', 'bus', 'car' e normaliza veículos de doca
-            if (cls === 'truck' || cls === 'bus' || cls === 'car') {
-              const rawX = p.bbox[0] * scaleX;
-              const rawY = p.bbox[1] * scaleY;
-              const rawW = p.bbox[2] * scaleX;
-              const rawH = p.bbox[3] * scaleY;
-
-              const normalizedBbox: [number, number, number, number] = [
-                Math.max(0, Math.min(1, rawX / vWidth)),
-                Math.max(0, Math.min(1, rawY / vHeight)),
-                Math.max(0, Math.min(1, rawW / vWidth)),
-                Math.max(0, Math.min(1, rawH / vHeight)),
-              ];
-
-              const centroid = {
-                x: normalizedBbox[0] + normalizedBbox[2] / 2,
-                y: normalizedBbox[1] + normalizedBbox[3] / 2,
-              };
-
-              // Base das rodas onde o veículo toca o solo
-              const groundContact = {
-                x: normalizedBbox[0] + normalizedBbox[2] / 2,
-                y: Math.min(1, normalizedBbox[1] + normalizedBbox[3] * 0.90),
-              };
-
-              // Normaliza a classe para 'truck' nas docas para que o usuário não veja 'car'
-              vehicleDetections.push({
-                bbox: [rawX, rawY, rawW, rawH],
-                normalizedBbox,
-                class: 'truck', // Normalizado para Caminhão nas docas
-                score: p.score,
-                centroid,
-                groundContact,
-              });
+            if (onDetectionsRef.current) {
+              onDetectionsRef.current(vehicleDetections);
             }
-          }
-
-          detectionsRef.current = vehicleDetections;
-
-          if (onDetectionsRef.current) {
-            onDetectionsRef.current(vehicleDetections);
           }
         } catch (err) {
           console.warn('Erro inferência IA:', err);
@@ -341,13 +307,11 @@ export function useTruckDetection({
         }
       }
 
-      // Agenda a próxima inferência SOMENTE após o término da atual (sem sobrecarga de pilha)
       if (isRunning) {
         timeoutId = setTimeout(runInferenceCycle, effectiveCooldown);
       }
     };
 
-    // Inicia ciclo
     timeoutId = setTimeout(runInferenceCycle, 200);
 
     return () => {

@@ -44,7 +44,8 @@ export interface DockBox {
 export interface TruckDetection {
   bbox: [number, number, number, number]; // [x, y, width, height] em pixels do frame
   normalizedBbox: [number, number, number, number]; // [x, y, w, h] normalizado 0 a 1
-  class: string;
+  class: string; // 'truck' | 'car' | 'bus'
+  label: string; // "Caminhão", "Carro", "Ônibus"
   score: number;
   centroid: Point2D;
   groundContact: Point2D; // Ponto das rodas tocando o solo
