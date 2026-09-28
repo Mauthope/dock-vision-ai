@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useDock } from '@/context/DockContext';
 import { useTruckDetection } from '@/hooks/useTruckDetection';
 import { formatDuration } from '@/utils/boxGeometry';
-import { Truck, Smartphone, Camera, RefreshCw, Volume2, ArrowLeft, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Truck, Smartphone, Camera, RefreshCw, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 function DeviceTerminalContent() {
@@ -22,7 +22,6 @@ function DeviceTerminalContent() {
 
   const {
     videoRef,
-    canvasRef,
     cameraActive,
     cameraError,
     startCamera,
@@ -41,7 +40,7 @@ function DeviceTerminalContent() {
       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
         <Link
           href="/"
-          className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg bg-slate-900 border border-slate-800"
+          className="flex items-center gap-2 text-slate-400 hover:text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar ao Painel
         </Link>
@@ -128,14 +127,32 @@ function DeviceTerminalContent() {
           </div>
         )}
 
-        {/* Visor Compacto da Câmera do Smartphone */}
-        <div className="w-full max-w-md h-48 rounded-xl overflow-hidden bg-black border border-slate-800 relative">
-          <video ref={videoRef} className="hidden" playsInline muted autoPlay />
-          <canvas ref={canvasRef} className="w-full h-full object-contain" />
+        {/* Visor da Câmera do Smartphone com vídeo nativo ultra leve */}
+        <div className="w-full max-w-md h-52 rounded-xl overflow-hidden bg-black border border-slate-800 relative">
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover"
+            playsInline
+            muted
+            autoPlay
+          />
           
           <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/70 text-[10px] font-mono text-cyan-300 border border-cyan-800/40">
             CÂMERA ATIVA
           </div>
+
+          {cameraError && (
+            <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-4 text-center">
+              <Camera className="w-6 h-6 text-rose-400 mb-2" />
+              <p className="text-xs text-slate-300">{cameraError}</p>
+              <button
+                onClick={startCamera}
+                className="mt-3 px-3 py-1.5 rounded-lg bg-cyan-600 text-xs font-bold text-slate-950"
+              >
+                Permitir Câmera
+              </button>
+            </div>
+          )}
         </div>
 
       </div>

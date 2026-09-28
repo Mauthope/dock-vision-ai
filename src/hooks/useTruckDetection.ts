@@ -18,12 +18,10 @@ export interface CameraDeviceInfo {
 export function useTruckDetection({
   activeCamera,
   confidenceThreshold = 0.40,
-  inferenceIntervalMs = 250,
+  inferenceIntervalMs = 350,
   onDetections,
 }: UseTruckDetectionOptions) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const canvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const modelRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const inferCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -35,14 +33,14 @@ export function useTruckDetection({
   const [availableDevices, setAvailableDevices] = useState<CameraDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>(activeCamera?.deviceId || '');
   const [fps, setFps] = useState<number>(0);
-  const [currentDetections, setCurrentDetections] = useState<TruckDetection[]>([]);
 
+  // Armazena as detecções em uma Ref para acesso síncrono a 60 FPS sem forçar re-render React
+  const detectionsRef = useRef<TruckDetection[]>([]);
   const isDetectingRef = useRef<boolean>(false);
-  const lastDetectionsRef = useRef<TruckDetection[]>([]);
   const onDetectionsRef = useRef(onDetections);
   onDetectionsRef.current = onDetections;
 
-  // Carregar Modelo TensorFlow.js COCO-SSD com aceleração WebGL
+  // Carregar Modelo TensorFlow.js COCO-SSD
   useEffect(() => {
     let isMounted = true;
 
@@ -58,13 +56,13 @@ export function useTruckDetection({
           try {
             await tf.setBackend('webgl');
           } catch (e) {
-            console.warn('WebGL fallback to default backend:', tf.getBackend());
+            console.warn('WebGL fallback:', tf.getBackend());
           }
         }
 
         const cocoSsd = await import('@tensorflow-models/coco-ssd');
         const loadedModel = await cocoSsd.load({
-          base: 'lite_mobilenet_v2', // Ultra rápido para detecção em tempo real sem sobrecarregar a CPU
+          base: 'lite_mobilenet_v2', // Ultra leve e otimizado
         });
 
         if (isMounted) {
@@ -74,7 +72,7 @@ export function useTruckDetection({
       } catch (err: any) {
         console.error('Erro ao carregar modelo COCO-SSD:', err);
         if (isMounted) {
-          setModelError(err?.message || 'Falha ao inicializar o motor de inteligência artificial.');
+          setModelError(err?.message || 'Falha ao carregar o motor de IA.');
           setIsLoadingModel(false);
         }
       }
@@ -82,11 +80,11 @@ export function useTruckDetection({
 
     loadModel();
 
-    // Canvas offscreen downscaled para inferência ultra rápida (320x240)
+    // Canvas offscreen para inferência (300x200 para máxima velocidade da GPU)
     if (typeof document !== 'undefined' && !inferCanvasRef.current) {
       const c = document.createElement('canvas');
-      c.width = 320;
-      c.height = 240;
+      c.width = 300;
+      c.height = 200;
       inferCanvasRef.current = c;
     }
 
@@ -95,7 +93,7 @@ export function useTruckDetection({
     };
   }, []);
 
-  // Enumerate Câmeras Físicas
+  // Enumerate Câmeras
   const refreshDevices = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -108,11 +106,11 @@ export function useTruckDetection({
         }));
       setAvailableDevices(videoDevs);
     } catch (err) {
-      console.warn('Erro ao enumerar dispositivos de vídeo:', err);
+      console.warn('Erro ao enumerar dispositivos:', err);
     }
   }, []);
 
-  // Interrompe stream atual
+  // Parar stream
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -124,7 +122,7 @@ export function useTruckDetection({
     setCameraActive(false);
   }, []);
 
-  // Iniciar Fonte de Vídeo (Webcam, Câmera IP ou Vídeo Sample)
+  // Iniciar Fonte de Vídeo
   const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError(null);
@@ -132,7 +130,6 @@ export function useTruckDetection({
     if (!activeCamera) return;
 
     if (activeCamera.type === 'sample_video' && activeCamera.sampleUrl) {
-      // Fonte de vídeo de simulação
       if (videoRef.current) {
         videoRef.current.src = activeCamera.sampleUrl;
         videoRef.current.loop = true;
@@ -146,14 +143,12 @@ export function useTruckDetection({
     }
 
     if (activeCamera.type === 'ip_camera') {
-      // Se for uma imagem estática ou snapshot MJPEG em URL
       setCameraActive(true);
       return;
     }
 
-    // Caso seja Webcam do aparelho
     if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Navegador não suporta acesso à câmera (getUserMedia).');
+      setCameraError('Navegador não suporta acesso à câmera.');
       return;
     }
 
@@ -171,7 +166,7 @@ export function useTruckDetection({
             audio: false,
           });
         } catch (e) {
-          console.warn('Falha com deviceId específico, usando padrão...', e);
+          console.warn('Falha deviceId, usando padrão...', e);
         }
       }
 
@@ -208,32 +203,22 @@ export function useTruckDetection({
           setTimeout(resolve, 800);
         });
 
-        await videoRef.current.play().catch(playErr => {
-          console.warn('Autoplay bloqueado, tentando muted:', playErr);
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            return videoRef.current.play();
-          }
-        });
-
+        await videoRef.current.play().catch(() => {});
         setCameraActive(true);
       }
     } catch (err: any) {
       console.error('Falha ao iniciar câmera:', err);
       let msg = 'Não foi possível acessar a câmera.';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Permissão de câmera negada. Permita o acesso nas configurações do seu navegador.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        msg = 'Nenhuma câmera conectada foi encontrada.';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        msg = 'A câmera está sendo utilizada por outro aplicativo.';
+      if (err.name === 'NotAllowedError') {
+        msg = 'Permissão de câmera negada.';
+      } else if (err.name === 'NotFoundError') {
+        msg = 'Nenhuma câmera conectada encontrada.';
       }
       setCameraError(msg);
       setCameraActive(false);
     }
   }, [activeCamera, selectedDeviceId, stopCamera, refreshDevices]);
 
-  // Efeito para alternar câmera
   useEffect(() => {
     startCamera();
     return () => {
@@ -241,7 +226,7 @@ export function useTruckDetection({
     };
   }, [startCamera, stopCamera]);
 
-  // Loop de Renderização e Inferência IA
+  // Loop Exclusivo de Inferência IA (Totalmente desacoplado do Canvas)
   useEffect(() => {
     if (!cameraActive) return;
 
@@ -250,145 +235,105 @@ export function useTruckDetection({
     let frameCount = 0;
     let lastFpsTime = performance.now();
 
-    const detectionLoop = async (time: number) => {
-      if (!isRunning) return;
+    const inferenceTimer = setInterval(async () => {
+      if (!isRunning || isDetectingRef.current) return;
 
       const video = videoRef.current;
       const model = modelRef.current;
-      const canvas = canvasRef.current;
 
-      // Cálculo de FPS suave
+      if (!model || !video || video.readyState < 2 || video.paused) return;
+
+      const now = performance.now();
       frameCount++;
-      if (time - lastFpsTime >= 1000) {
-        setFps(Math.round((frameCount * 1000) / (time - lastFpsTime)));
+      if (now - lastFpsTime >= 1000) {
+        setFps(Math.round((frameCount * 1000) / (now - lastFpsTime)));
         frameCount = 0;
-        lastFpsTime = time;
+        lastFpsTime = now;
       }
 
-      // 1. Renderiza o frame de vídeo no canvas se disponível
-      if (video && video.readyState >= 2 && canvas) {
-        if (!canvasCtxRef.current || canvasCtxRef.current.canvas !== canvas) {
-          canvasCtxRef.current = canvas.getContext('2d', { alpha: false });
-        }
-        const ctx = canvasCtxRef.current;
+      isDetectingRef.current = true;
 
-        if (ctx) {
-          // Ajusta resolução do canvas para o aspect ratio nativo do vídeo ou 1280x720
-          const vWidth = video.videoWidth || 640;
-          const vHeight = video.videoHeight || 480;
+      try {
+        const vWidth = video.videoWidth || 640;
+        const vHeight = video.videoHeight || 480;
 
-          if (canvas.width !== vWidth || canvas.height !== vHeight) {
-            canvas.width = vWidth;
-            canvas.height = vHeight;
+        // Renderiza frame reduzido no canvas de inferência
+        let inputSource: HTMLVideoElement | HTMLCanvasElement = video;
+        const inferCanvas = inferCanvasRef.current;
+        if (inferCanvas) {
+          const inferCtx = inferCanvas.getContext('2d', { alpha: false });
+          if (inferCtx) {
+            inferCtx.drawImage(video, 0, 0, inferCanvas.width, inferCanvas.height);
+            inputSource = inferCanvas;
           }
-
-          // Desenha frame de vídeo real
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
-      }
 
-      // 2. Executa Inferência Throttled do Modelo
-      if (
-        model &&
-        video &&
-        video.readyState >= 2 &&
-        time - lastInferenceTime >= inferenceIntervalMs &&
-        !isDetectingRef.current
-      ) {
-        isDetectingRef.current = true;
-        lastInferenceTime = time;
+        const predictions = await model.detect(inputSource, 8, confidenceThreshold);
 
-        try {
-          // Redimensiona para canvas offscreen para velocidade máxima de processamento
-          let inputSource: HTMLVideoElement | HTMLCanvasElement = video;
-          const inferCanvas = inferCanvasRef.current;
-          if (inferCanvas) {
-            const inferCtx = inferCanvas.getContext('2d');
-            if (inferCtx) {
-              inferCtx.drawImage(video, 0, 0, inferCanvas.width, inferCanvas.height);
-              inputSource = inferCanvas;
-            }
+        const scaleX = inferCanvas ? vWidth / inferCanvas.width : 1;
+        const scaleY = inferCanvas ? vHeight / inferCanvas.height : 1;
+
+        const vehicleDetections: TruckDetection[] = [];
+
+        for (let i = 0; i < predictions.length; i++) {
+          const p = predictions[i];
+          const cls = p.class.toLowerCase();
+
+          if (cls === 'truck' || cls === 'bus' || cls === 'car') {
+            const rawX = p.bbox[0] * scaleX;
+            const rawY = p.bbox[1] * scaleY;
+            const rawW = p.bbox[2] * scaleX;
+            const rawH = p.bbox[3] * scaleY;
+
+            const normalizedBbox: [number, number, number, number] = [
+              Math.max(0, Math.min(1, rawX / vWidth)),
+              Math.max(0, Math.min(1, rawY / vHeight)),
+              Math.max(0, Math.min(1, rawW / vWidth)),
+              Math.max(0, Math.min(1, rawH / vHeight)),
+            ];
+
+            const centroid = {
+              x: normalizedBbox[0] + normalizedBbox[2] / 2,
+              y: normalizedBbox[1] + normalizedBbox[3] / 2,
+            };
+
+            const groundContact = {
+              x: normalizedBbox[0] + normalizedBbox[2] / 2,
+              y: Math.min(1, normalizedBbox[1] + normalizedBbox[3] * 0.90),
+            };
+
+            vehicleDetections.push({
+              bbox: [rawX, rawY, rawW, rawH],
+              normalizedBbox,
+              class: cls,
+              score: p.score,
+              centroid,
+              groundContact,
+            });
           }
-
-          // Executa predição COCO-SSD
-          const predictions = await model.detect(inputSource, 10, confidenceThreshold);
-
-          // Escala de volta para as dimensões nativas do vídeo
-          const vWidth = video.videoWidth || 640;
-          const vHeight = video.videoHeight || 480;
-          const scaleX = inferCanvas ? vWidth / inferCanvas.width : 1;
-          const scaleY = inferCanvas ? vHeight / inferCanvas.height : 1;
-
-          // Mapeia detecções com cálculos geométricos essenciais
-          const vehicleDetections: TruckDetection[] = [];
-
-          predictions.forEach((p: any) => {
-            const cls = p.class.toLowerCase();
-            // Aceita veículos relevantes: truck, bus, car
-            if (cls === 'truck' || cls === 'bus' || cls === 'car') {
-              const rawX = p.bbox[0] * scaleX;
-              const rawY = p.bbox[1] * scaleY;
-              const rawW = p.bbox[2] * scaleX;
-              const rawH = p.bbox[3] * scaleY;
-
-              const normalizedBbox: [number, number, number, number] = [
-                Math.max(0, Math.min(1, rawX / vWidth)),
-                Math.max(0, Math.min(1, rawY / vHeight)),
-                Math.max(0, Math.min(1, rawW / vWidth)),
-                Math.max(0, Math.min(1, rawH / vHeight)),
-              ];
-
-              const centroid = {
-                x: normalizedBbox[0] + normalizedBbox[2] / 2,
-                y: normalizedBbox[1] + normalizedBbox[3] / 2,
-              };
-
-              // Ponto de contato das rodas com o solo (base inferior central)
-              const groundContact = {
-                x: normalizedBbox[0] + normalizedBbox[2] / 2,
-                y: Math.min(1, normalizedBbox[1] + normalizedBbox[3] * 0.90),
-              };
-
-              vehicleDetections.push({
-                bbox: [rawX, rawY, rawW, rawH],
-                normalizedBbox,
-                class: cls,
-                score: p.score,
-                centroid,
-                groundContact,
-              });
-            }
-          });
-
-          lastDetectionsRef.current = vehicleDetections;
-          setCurrentDetections(vehicleDetections);
-
-          if (onDetectionsRef.current) {
-            onDetectionsRef.current(vehicleDetections);
-          }
-        } catch (predErr) {
-          console.warn('Erro na predição de caminhões:', predErr);
-        } finally {
-          isDetectingRef.current = false;
         }
-      }
 
-      if (isRunning) {
-        requestAnimationFrame(detectionLoop);
-      }
-    };
+        // Salva na Ref sem disparar re-render no React
+        detectionsRef.current = vehicleDetections;
 
-    const animId = requestAnimationFrame(detectionLoop);
+        if (onDetectionsRef.current) {
+          onDetectionsRef.current(vehicleDetections);
+        }
+      } catch (err) {
+        console.warn('Erro na inferência:', err);
+      } finally {
+        isDetectingRef.current = false;
+      }
+    }, inferenceIntervalMs);
 
     return () => {
       isRunning = false;
-      cancelAnimationFrame(animId);
+      clearInterval(inferenceTimer);
     };
   }, [cameraActive, confidenceThreshold, inferenceIntervalMs]);
 
   return {
     videoRef,
-    canvasRef,
     isLoadingModel,
     modelError,
     cameraActive,
@@ -397,7 +342,7 @@ export function useTruckDetection({
     selectedDeviceId,
     setSelectedDeviceId,
     fps,
-    currentDetections,
+    detectionsRef,
     startCamera,
     stopCamera,
     refreshDevices,

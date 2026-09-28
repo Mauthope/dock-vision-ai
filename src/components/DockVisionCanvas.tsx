@@ -3,38 +3,34 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useDock } from '../context/DockContext';
 import { useTruckDetection } from '../hooks/useTruckDetection';
+import { Point2D, DockBox } from '../types/dock';
 import {
-  Point2D,
-  DockBox,
-  TruckDetection
-} from '../types/dock';
-import {
-  normalizePoint,
-  denormalizePoint,
+  screenToNormalizedVideoCoord,
+  normalizedToCanvasCoord,
+  getVideoRenderDimensions,
+  isPointInPolygon,
   createRectanglePoints,
   formatDuration
 } from '../utils/boxGeometry';
 import {
   Maximize2,
   Minimize2,
-  PenTool,
   Square,
   Shapes,
   Trash2,
-  Check,
-  X,
-  Camera,
   RefreshCw,
   Video,
+  Copy,
+  Sliders,
+  Check,
+  X,
+  Move,
   Info,
-  Sparkles
+  HelpCircle,
+  Truck
 } from 'lucide-react';
 
-interface DockVisionCanvasProps {
-  onEditBox?: (box: DockBox) => void;
-}
-
-export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox }) => {
+export const DockVisionCanvas: React.FC = () => {
   const {
     boxes,
     cameras,
@@ -44,7 +40,11 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
     processDetections,
     addBox,
     updateBox,
+    moveBox,
+    duplicateBox,
     deleteBox,
+    selectedBoxId,
+    setSelectedBoxId,
     manualToggleOccupied
   } = useDock();
 
@@ -52,39 +52,54 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activeCamera = cameras.find(c => c.id === activeCameraId) || cameras[0];
 
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [drawingMode, setDrawingMode] = useState<boolean>(false);
   const [drawTool, setDrawTool] = useState<'rectangle' | 'polygon'>('rectangle');
-  const [currentPoints, setCurrentPoints] = useState<Point2D[]>([]);
+  const [drawingPoints, setDrawingPoints] = useState<Point2D[]>([]);
   const [dragStartPoint, setDragStartPoint] = useState<Point2D | null>(null);
-  const [activeBoxName, setActiveBoxName] = useState<string>('Novo Boxe');
-  const [activeBoxColor, setActiveBoxColor] = useState<string>('#06b6d4');
-  const [hoveredBoxId, setHoveredBoxId] = useState<string | null>(null);
-  const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
+  const [mousePreviewPoint, setMousePreviewPoint] = useState<Point2D | null>(null);
 
-  // Dragging vertex state for fine calibration
-  const [draggingVertex, setDraggingVertex] = useState<{ boxId: string; pointIdx: number } | null>(null);
+  // Estados de manipulação
+  const [isDraggingWholeBox, setIsDraggingWholeBox] = useState(false);
+  const [draggingVertexIdx, setDraggingVertexIdx] = useState<number | null>(null);
+  const [dragLastPoint, setDragLastPoint] = useState<Point2D | null>(null);
 
-  // Hook de detecção com TensorFlow.js COCO-SSD
+  // Refs síncronas para 60 FPS sem engasgos
+  const boxesRef = useRef<DockBox[]>(boxes);
+  boxesRef.current = boxes;
+
+  const selectedBoxIdRef = useRef<string | null>(selectedBoxId);
+  selectedBoxIdRef.current = selectedBoxId;
+
+  const drawingPointsRef = useRef<Point2D[]>(drawingPoints);
+  drawingPointsRef.current = drawingPoints;
+
+  const drawToolRef = useRef<'rectangle' | 'polygon'>(drawTool);
+  drawToolRef.current = drawTool;
+
+  const drawingModeRef = useRef<boolean>(drawingMode);
+  drawingModeRef.current = drawingMode;
+
+  const mousePreviewPointRef = useRef<Point2D | null>(mousePreviewPoint);
+  mousePreviewPointRef.current = mousePreviewPoint;
+
+  // Hook IA com detecções salvas na Ref (zero re-renders)
   const {
     videoRef,
     isLoadingModel,
-    modelError,
     cameraActive,
     cameraError,
     startCamera,
     fps,
-    currentDetections,
-    refreshDevices,
-    availableDevices,
-    selectedDeviceId,
-    setSelectedDeviceId
+    detectionsRef
   } = useTruckDetection({
     activeCamera,
     confidenceThreshold: settings.confidenceThreshold,
     inferenceIntervalMs: settings.inferenceIntervalMs,
     onDetections: processDetections,
   });
+
+  const selectedBox = boxes.find(b => b.id === selectedBoxId);
 
   // Alternar tela cheia
   const toggleFullscreen = () => {
@@ -98,49 +113,46 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
     }
   };
 
-  // Helper para obter coordenadas do ponteiro normalizadas (0.0 a 1.0)
-  const getNormalizedPointerPos = useCallback((e: React.MouseEvent<HTMLCanvasElement>): Point2D | null => {
+  // Helper para obter coordenadas normalizadas do mouse
+  const getNormalizedPointFromEvent = useCallback((clientX: number, clientY: number): Point2D | null => {
     const canvas = canvasRef.current;
+    const video = videoRef.current;
     if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
 
-    const normX = Math.max(0, Math.min(1, clientX / rect.width));
-    const normY = Math.max(0, Math.min(1, clientY / rect.height));
-    return { x: normX, y: normY };
+    const vWidth = video?.videoWidth || 1280;
+    const vHeight = video?.videoHeight || 720;
+
+    return screenToNormalizedVideoCoord(clientX, clientY, canvas, vWidth, vHeight);
   }, []);
 
-  // Iniciar desenho de novo boxe
+  // Iniciar modo de desenho
   const startDrawing = (tool: 'rectangle' | 'polygon') => {
     setDrawTool(tool);
     setDrawingMode(true);
-    setCurrentPoints([]);
+    setDrawingPoints([]);
     setDragStartPoint(null);
-    const nextNumber = boxes.length + 1;
-    setActiveBoxName(`Boxe ${nextNumber}`);
-    const colors = ['#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
-    setActiveBoxColor(colors[nextNumber % colors.length]);
+    setSelectedBoxId(null);
   };
 
-  // Cancelar desenho
   const cancelDrawing = () => {
     setDrawingMode(false);
-    setCurrentPoints([]);
+    setDrawingPoints([]);
     setDragStartPoint(null);
+    setMousePreviewPoint(null);
   };
 
-  // Concluir e salvar novo boxe desenhado
-  const finishDrawing = () => {
-    if (currentPoints.length < 3) {
-      alert('Desenhe pelo menos 3 pontos para criar o boxe.');
-      return;
-    }
+  // Finalizar e salvar boxe
+  const finalizeDrawnBox = (points: Point2D[]) => {
+    if (points.length < 3) return;
 
-    addBox({
-      name: activeBoxName || `Boxe ${boxes.length + 1}`,
-      color: activeBoxColor,
-      points: currentPoints,
+    const count = boxes.length + 1;
+    const colors = ['#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+    const color = colors[count % colors.length];
+
+    const newId = addBox({
+      name: `Boxe ${count}`,
+      color,
+      points,
       cameraId: activeCameraId,
       detectionCriteria: 'ground',
       overlapThreshold: 0.25,
@@ -150,120 +162,190 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
     });
 
     setDrawingMode(false);
-    setCurrentPoints([]);
+    setDrawingPoints([]);
     setDragStartPoint(null);
+    setMousePreviewPoint(null);
+    setSelectedBoxId(newId);
   };
 
-  // Mouse Down no Canvas
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const norm = getNormalizedPointerPos(e);
+  // --- TRATAMENTO DE EVENTOS DE MOUSE E TOUCH ---
+
+  const handlePointerDown = (clientX: number, clientY: number) => {
+    const norm = getNormalizedPointFromEvent(clientX, clientY);
     if (!norm) return;
 
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const vw = video?.videoWidth || 1280;
+    const vh = video?.videoHeight || 720;
+
+    // 1. MODO DE DESENHO ATIVO
     if (drawingMode) {
       if (drawTool === 'rectangle') {
         setDragStartPoint(norm);
-        setCurrentPoints(createRectanglePoints(norm, norm));
+        setDrawingPoints(createRectanglePoints(norm, norm));
       } else if (drawTool === 'polygon') {
-        if (currentPoints.length < 4) {
-          const updated = [...currentPoints, norm];
-          setCurrentPoints(updated);
-          if (updated.length === 4) {
-            // Completa os 4 pontos de perspectiva
-            setCurrentPoints(updated);
-          }
+        const nextPts = [...drawingPoints, norm];
+        if (nextPts.length >= 4) {
+          finalizeDrawnBox(nextPts);
+        } else {
+          setDrawingPoints(nextPts);
         }
       }
       return;
     }
 
-    // Modo normal: verificar se clicou em algum vértice de boxe para ajuste fino
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const cw = canvas.width;
-    const ch = canvas.height;
+    // 2. MODO NORMAL: TESTAR CLIQUE EM VÉRTICES OU NO INTERIOR DO BOXE
 
-    for (const box of boxes) {
+    // (A) Testar clique em vértices dos boxes (Hit radius de 25px em coordenadas de tela)
+    for (const box of boxesRef.current) {
       if (box.cameraId !== activeCameraId) continue;
+
       for (let i = 0; i < box.points.length; i++) {
-        const pt = denormalizePoint(box.points[i], cw, ch);
-        const clickPx = denormalizePoint(norm, cw, ch);
-        const dist = Math.hypot(pt.x - clickPx.x, pt.y - clickPx.y);
-        if (dist <= 15) { // Raio de toque em pixels
-          setDraggingVertex({ boxId: box.id, pointIdx: i });
+        const pt = normalizedToCanvasCoord(box.points[i], cw, ch, vw, vh);
+        const mousePx = normalizedToCanvasCoord(norm, cw, ch, vw, vh);
+        const dist = Math.hypot(pt.x - mousePx.x, pt.y - mousePx.y);
+
+        if (dist <= 26) {
           setSelectedBoxId(box.id);
+          setDraggingVertexIdx(i);
+          setDragLastPoint(norm);
           return;
         }
       }
     }
+
+    // (B) Testar clique dentro de algum boxe (Hit test para selecionar e mover o boxe inteiro)
+    for (let b = boxesRef.current.length - 1; b >= 0; b--) {
+      const box = boxesRef.current[b];
+      if (box.cameraId !== activeCameraId) continue;
+
+      if (isPointInPolygon(norm, box.points)) {
+        setSelectedBoxId(box.id);
+        setIsDraggingWholeBox(true);
+        setDragLastPoint(norm);
+        return;
+      }
+    }
+
+    // Clique fora de qualquer boxe desmarca a seleção
+    setSelectedBoxId(null);
   };
 
-  // Mouse Move no Canvas
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const norm = getNormalizedPointerPos(e);
+  const handlePointerMove = (clientX: number, clientY: number) => {
+    const norm = getNormalizedPointFromEvent(clientX, clientY);
     if (!norm) return;
 
+    // Modo desenho
     if (drawingMode) {
+      setMousePreviewPoint(norm);
       if (drawTool === 'rectangle' && dragStartPoint) {
-        setCurrentPoints(createRectanglePoints(dragStartPoint, norm));
+        setDrawingPoints(createRectanglePoints(dragStartPoint, norm));
       }
       return;
     }
 
-    // Ajuste de vértice existente
-    if (draggingVertex) {
-      const box = boxes.find(b => b.id === draggingVertex.boxId);
-      if (box) {
-        const updatedPoints = [...box.points];
-        updatedPoints[draggingVertex.pointIdx] = norm;
-        updateBox(box.id, { points: updatedPoints });
+    // Arrastando vértice específico
+    if (draggingVertexIdx !== null && selectedBoxId && dragLastPoint) {
+      const currentBox = boxesRef.current.find(b => b.id === selectedBoxId);
+      if (currentBox) {
+        const updatedPoints = [...currentBox.points];
+        updatedPoints[draggingVertexIdx] = norm;
+        updateBox(currentBox.id, { points: updatedPoints });
+      }
+      return;
+    }
+
+    // Arrastando o boxe inteiro
+    if (isDraggingWholeBox && selectedBoxId && dragLastPoint) {
+      const dx = norm.x - dragLastPoint.x;
+      const dy = norm.y - dragLastPoint.y;
+
+      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+        moveBox(selectedBoxId, dx, dy);
+        setDragLastPoint(norm);
       }
     }
   };
 
-  // Mouse Up no Canvas
-  const handleCanvasMouseUp = () => {
-    if (drawingMode && drawTool === 'rectangle' && dragStartPoint) {
-      setDragStartPoint(null);
+  const handlePointerUp = () => {
+    if (drawingMode && drawTool === 'rectangle' && dragStartPoint && drawingPoints.length === 4) {
+      finalizeDrawnBox(drawingPoints);
     }
-    if (draggingVertex) {
-      setDraggingVertex(null);
-    }
+
+    setIsDraggingWholeBox(false);
+    setDraggingVertexIdx(null);
+    setDragLastPoint(null);
   };
 
-  // Render Loop do Canvas de Visualização & HUD Sci-Fi
+  // Eventos de Mouse
+  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => handlePointerDown(e.clientX, e.clientY);
+  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => handlePointerMove(e.clientX, e.clientY);
+  const onMouseUp = () => handlePointerUp();
+
+  // Eventos de Touch
+  const onTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length > 0) {
+      handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+  const onTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length > 0) {
+      handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+  const onTouchEnd = () => handlePointerUp();
+
+  // --- ÚNICO LOOP DE RENDERIZAÇÃO NO CANVAS (60 FPS SUAVES) ---
   useEffect(() => {
     let animId: number;
 
-    const renderOverlay = () => {
+    const renderLoop = () => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
       if (!canvas) return;
 
-      const ctx = canvas.getContext('2d');
+      // Sincroniza dimensões internas do Canvas com as dimensões CSS reais do elemento
+      const rect = canvas.getBoundingClientRect();
+      const targetW = Math.round(rect.width);
+      const targetH = Math.round(rect.height);
+
+      if (targetW > 0 && targetH > 0 && (canvas.width !== targetW || canvas.height !== targetH)) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) return;
 
       const cw = canvas.width;
       const ch = canvas.height;
+      const vw = video?.videoWidth || 1280;
+      const vh = video?.videoHeight || 720;
 
-      // Se temos vídeo ativo, desenha o frame
+      // 1. Limpa o fundo escuro
+      ctx.fillStyle = '#060a13';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // 2. Renderiza o frame de vídeo com proporção e letterboxing perfeitos
       if (video && video.readyState >= 2) {
-        ctx.drawImage(video, 0, 0, cw, ch);
+        const { renderW, renderH, offsetX, offsetY } = getVideoRenderDimensions(cw, ch, vw, vh);
+        ctx.drawImage(video, offsetX, offsetY, renderW, renderH);
       } else {
-        // Fundo escuro industrial estilizado caso a câmera esteja inicializando
-        ctx.fillStyle = '#060a13';
-        ctx.fillRect(0, 0, cw, ch);
-
-        // Grade cibernética sutil
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.6)';
+        // Grade cibernética sutil enquanto a câmera inicializa
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
         ctx.lineWidth = 1;
-        const step = 40;
-        for (let x = 0; x < cw; x += step) {
+        for (let x = 0; x < cw; x += 50) {
           ctx.beginPath();
           ctx.moveTo(x, 0);
           ctx.lineTo(x, ch);
           ctx.stroke();
         }
-        for (let y = 0; y < ch; y += step) {
+        for (let y = 0; y < ch; y += 50) {
           ctx.beginPath();
           ctx.moveTo(0, y);
           ctx.lineTo(cw, y);
@@ -271,17 +353,19 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
         }
       }
 
-      // 1. DESENHAR OS BOXES CADASTRADOS
-      boxes.forEach(box => {
+      const curBoxes = boxesRef.current;
+      const curSelectedId = selectedBoxIdRef.current;
+
+      // 3. DESENHAR BOXES EXISTENTES
+      curBoxes.forEach(box => {
         if (box.cameraId !== activeCameraId || box.points.length < 3) return;
 
         const isOcc = box.status === 'occupied';
         const isApp = box.status === 'approaching';
-        const isSel = selectedBoxId === box.id;
+        const isSel = curSelectedId === box.id;
 
-        const pts = box.points.map(p => denormalizePoint(p, cw, ch));
+        const pts = box.points.map(p => normalizedToCanvasCoord(p, cw, ch, vw, vh));
 
-        // Caminho do polígono
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) {
@@ -289,24 +373,15 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
         }
         ctx.closePath();
 
-        // Estilos de preenchimento dinâmicos
+        // Preenchimento e Borda
         if (isOcc) {
-          // Boxe Ocupado: Glow vibrante vermelho / neon pulsante
-          const grad = ctx.createLinearGradient(pts[0].x, pts[0].y, pts[2]?.x || pts[0].x, pts[2]?.y || pts[0].y);
-          grad.addColorStop(0, 'rgba(239, 68, 68, 0.28)');
-          grad.addColorStop(1, 'rgba(244, 63, 94, 0.18)');
-          ctx.fillStyle = grad;
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.25)';
           ctx.fill();
-
           ctx.strokeStyle = '#f43f5e';
           ctx.lineWidth = 4;
-          ctx.shadowColor = '#f43f5e';
-          ctx.shadowBlur = 18;
           ctx.stroke();
-          ctx.shadowBlur = 0; // Reset shadow
         } else if (isApp) {
-          // Aproximação: Âmbar/Laranja
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.20)';
           ctx.fill();
           ctx.strokeStyle = '#f59e0b';
           ctx.lineWidth = 3;
@@ -314,176 +389,162 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          // Boxe Livre: Estilo normal com a cor do boxe
-          ctx.fillStyle = `${box.color}15`; // ~8% opacity
+          ctx.fillStyle = isSel ? `${box.color}25` : `${box.color}12`;
           ctx.fill();
           ctx.strokeStyle = box.color;
-          ctx.lineWidth = isSel ? 3 : 2;
+          ctx.lineWidth = isSel ? 3.5 : 2;
           ctx.stroke();
         }
 
-        // Desenhar vértices de calibração interativa
+        // Desenhar alças dos Vértices
         pts.forEach((pt, idx) => {
-          ctx.fillStyle = '#060a13';
+          ctx.fillStyle = isSel ? '#ffffff' : '#080d1a';
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, isSel ? 7 : 5, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.strokeStyle = isOcc ? '#f43f5e' : box.color;
           ctx.lineWidth = 2.5;
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, isSel ? 7 : 5, 0, Math.PI * 2);
           ctx.stroke();
-
-          // Ponto central branco
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
-          ctx.fill();
         });
 
-        // Tag Superior com Nome do Boxe
+        // Etiqueta com Nome do Boxe
         const firstPt = pts[0];
-        const tagText = box.name;
-        ctx.font = 'bold 13px Outfit, sans-serif';
-        const textWidth = ctx.measureText(tagText).width;
+        ctx.font = 'bold 12px Outfit, sans-serif';
+        const labelText = box.name;
+        const textWidth = ctx.measureText(labelText).width;
 
-        ctx.fillStyle = 'rgba(6, 10, 19, 0.9)';
+        ctx.fillStyle = 'rgba(8, 13, 26, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(firstPt.x, Math.max(18, firstPt.y - 24), textWidth + 24, 22, 6);
+        ctx.roundRect(firstPt.x, Math.max(16, firstPt.y - 24), textWidth + 24, 22, 6);
         ctx.fill();
 
-        ctx.strokeStyle = isOcc ? '#f43f5e' : box.color;
+        ctx.strokeStyle = isOcc ? '#f43f5e' : isSel ? '#ffffff' : box.color;
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Bolinha de status na tag
+        // Ponto indicador de status
         ctx.fillStyle = isOcc ? '#f43f5e' : isApp ? '#f59e0b' : '#10b981';
         ctx.beginPath();
-        ctx.arc(firstPt.x + 8, Math.max(18, firstPt.y - 24) + 11, 4, 0, Math.PI * 2);
+        ctx.arc(firstPt.x + 8, Math.max(16, firstPt.y - 24) + 11, 4, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#f8fafc';
-        ctx.fillText(tagText, firstPt.x + 18, Math.max(18, firstPt.y - 24) + 15);
+        ctx.fillText(labelText, firstPt.x + 18, Math.max(16, firstPt.y - 24) + 15);
 
-        // Se estiver ocupado, desenha CRONÔMETRO GIGANTE centralizado no boxe!
+        // Se estiver ocupado, desenhar cronômetro gigante no centro do boxe
         if (isOcc && box.currentTruck) {
           const duration = box.currentTruck.durationSeconds;
           const timeStr = formatDuration(duration);
 
-          // Centro aproximado do boxe
           const centerX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
           const centerY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
 
-          // Box do Cronômetro
-          const timerBoxW = 160;
-          const timerBoxH = 54;
+          const boxW = 150;
+          const boxH = 50;
+
           ctx.fillStyle = 'rgba(8, 13, 26, 0.94)';
           ctx.beginPath();
-          ctx.roundRect(centerX - timerBoxW / 2, centerY - timerBoxH / 2, timerBoxW, timerBoxH, 12);
+          ctx.roundRect(centerX - boxW / 2, centerY - boxH / 2, boxW, boxH, 10);
           ctx.fill();
 
           ctx.strokeStyle = '#f43f5e';
           ctx.lineWidth = 2;
           ctx.stroke();
 
-          // Label "TEMPO EM DOCA"
           ctx.fillStyle = '#fca5a5';
-          ctx.font = 'bold 10px Outfit, sans-serif';
+          ctx.font = 'bold 9px Outfit, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('EM ATENDIMENTO', centerX, centerY - timerBoxH / 2 + 16);
+          ctx.fillText('EM ATENDIMENTO', centerX, centerY - boxH / 2 + 15);
 
-          // Dígitos do tempo em fonte Mono gigante
           ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 24px monospace';
-          ctx.fillText(timeStr, centerX, centerY + 18);
-          ctx.textAlign = 'left'; // Reset
+          ctx.font = 'bold 22px monospace';
+          ctx.fillText(timeStr, centerX, centerY + 16);
+          ctx.textAlign = 'left';
         }
       });
 
-      // 2. DESENHAR DETECÇÕES DE CAMINHÕES DA IA
-      currentDetections.forEach(det => {
-        const [rx, ry, rw, rh] = det.bbox;
+      // 4. DESENHAR DETECÇÕES DE CAMINHÕES DA IA
+      const curDetections = detectionsRef.current;
+      curDetections.forEach(det => {
+        const normB = det.normalizedBbox;
+        const topLeft = normalizedToCanvasCoord({ x: normB[0], y: normB[1] }, cw, ch, vw, vh);
+        const bottomRight = normalizedToCanvasCoord(
+          { x: normB[0] + normB[2], y: normB[1] + normB[3] },
+          cw,
+          ch,
+          vw,
+          vh
+        );
 
-        // Bounding box retangular ciano com cantos cyberpunk
+        const rx = topLeft.x;
+        const ry = topLeft.y;
+        const rw = bottomRight.x - topLeft.x;
+        const rh = bottomRight.y - topLeft.y;
+
+        // Bounding Box Ciano com cantos cibernéticos
         ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)';
         ctx.lineWidth = 1.5;
         ctx.strokeRect(rx, ry, rw, rh);
 
-        // Cantos cibernéticos reforçados
-        const cLen = 16;
+        const cLen = 14;
         ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 3.5;
-        // Top-Left
+        ctx.lineWidth = 3;
+        // Cantos
         ctx.beginPath();
         ctx.moveTo(rx, ry + cLen);
         ctx.lineTo(rx, ry);
         ctx.lineTo(rx + cLen, ry);
-        ctx.stroke();
-        // Top-Right
-        ctx.beginPath();
         ctx.moveTo(rx + rw - cLen, ry);
         ctx.lineTo(rx + rw, ry);
         ctx.lineTo(rx + rw, ry + cLen);
-        ctx.stroke();
-        // Bottom-Right
-        ctx.beginPath();
         ctx.moveTo(rx + rw, ry + rh - cLen);
         ctx.lineTo(rx + rw, ry + rh);
         ctx.lineTo(rx + rw - cLen, ry + rh);
-        ctx.stroke();
-        // Bottom-Left
-        ctx.beginPath();
         ctx.moveTo(rx + cLen, ry + rh);
         ctx.lineTo(rx, ry + rh);
         ctx.lineTo(rx, ry + rh - cLen);
         ctx.stroke();
 
-        // PONTO DE CONTATO COM O SOLO (onde as rodas tocam o chão)
-        // Isso mostra graficamente ao usuário por que a detecção está 100% precisa dentro do boxe!
-        const gPt = denormalizePoint(det.groundContact, cw, ch);
+        // Ponto de solo (onde as rodas tocam a vaga)
+        const gPt = normalizedToCanvasCoord(det.groundContact, cw, ch, vw, vh);
         ctx.strokeStyle = '#10b981';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(gPt.x, gPt.y, 8, 0, Math.PI * 2);
+        ctx.arc(gPt.x, gPt.y, 7, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Laser cruzado no ponto de contato das rodas
-        ctx.beginPath();
-        ctx.moveTo(gPt.x - 12, gPt.y);
-        ctx.lineTo(gPt.x + 12, gPt.y);
-        ctx.moveTo(gPt.x, gPt.y - 12);
-        ctx.lineTo(gPt.x, gPt.y + 12);
-        ctx.stroke();
+        // Badge de identificação
+        const label = `${det.class.toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
+        ctx.font = 'bold 11px monospace';
+        const labelW = ctx.measureText(label).width + 14;
 
-        // Badge com Classe e Confiança
-        const labelText = `${det.class.toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
-        ctx.font = 'bold 12px monospace';
-        const labelW = ctx.measureText(labelText).width + 16;
         ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
         ctx.beginPath();
-        ctx.roundRect(rx, Math.max(14, ry - 22), labelW, 20, 4);
+        ctx.roundRect(rx, Math.max(14, ry - 20), labelW, 18, 4);
         ctx.fill();
 
         ctx.fillStyle = '#060a13';
-        ctx.fillText(labelText, rx + 8, Math.max(14, ry - 22) + 14);
+        ctx.fillText(label, rx + 7, Math.max(14, ry - 20) + 13);
       });
 
-      // 3. DESENHAR BOXE SENDO DESENHADO NO MOMENTO
-      if (drawingMode && currentPoints.length > 0) {
-        const pts = currentPoints.map(p => denormalizePoint(p, cw, ch));
+      // 5. DESENHO INTERATIVO EM PROGRESSO
+      if (drawingModeRef.current && drawingPointsRef.current.length > 0) {
+        const pts = drawingPointsRef.current.map(p => normalizedToCanvasCoord(p, cw, ch, vw, vh));
 
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) {
           ctx.lineTo(pts[i].x, pts[i].y);
         }
-        if (drawTool === 'rectangle' || pts.length === 4) {
-          ctx.closePath();
-        }
 
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
-        ctx.fill();
+        if (drawToolRef.current === 'rectangle' || pts.length === 4) {
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+          ctx.fill();
+        }
 
         ctx.strokeStyle = '#06b6d4';
         ctx.lineWidth = 2.5;
@@ -497,42 +558,51 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
           ctx.fill();
-
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 10px monospace';
-          ctx.fillText(`P${i + 1}`, pt.x + 8, pt.y - 6);
         });
+
+        // Linha elástica guia até o mouse no modo polígono
+        if (drawToolRef.current === 'polygon' && mousePreviewPointRef.current && pts.length < 4) {
+          const lastPt = pts[pts.length - 1];
+          const mPt = normalizedToCanvasCoord(mousePreviewPointRef.current, cw, ch, vw, vh);
+
+          ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(lastPt.x, lastPt.y);
+          ctx.lineTo(mPt.x, mPt.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
 
-      animId = requestAnimationFrame(renderOverlay);
+      animId = requestAnimationFrame(renderLoop);
     };
 
-    animId = requestAnimationFrame(renderOverlay);
+    animId = requestAnimationFrame(renderLoop);
 
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [boxes, currentDetections, activeCameraId, drawingMode, currentPoints, drawTool, selectedBoxId]);
+  }, [activeCameraId]);
 
   return (
     <div
       ref={containerRef}
       className={`relative w-full rounded-2xl overflow-hidden glass-panel border border-slate-800 shadow-2xl flex flex-col ${
-        isFullscreen ? 'h-screen w-screen rounded-none z-50 fixed inset-0' : 'min-h-[480px]'
+        isFullscreen ? 'h-screen w-screen rounded-none z-50 fixed inset-0' : 'min-h-[520px]'
       }`}
     >
-      {/* Barra de Ferramentas Superior do Vídeo */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-950/80 border-b border-slate-800 backdrop-blur-md z-10">
+      {/* Barra de Ferramentas Superior */}
+      <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-950/85 border-b border-slate-800 backdrop-blur-md z-10">
         
-        {/* Lado Esquerdo: Identificação da Câmera & Status do Modelo */}
+        {/* Identificação da Câmera & Status da IA */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
             <Video className="w-3.5 h-3.5 text-cyan-400" />
             <span className="font-semibold text-slate-200">{activeCamera.name}</span>
-            <span className="text-[10px] text-slate-500 font-mono">({activeCamera.type})</span>
           </div>
 
-          {/* Badge FPS & Status da IA */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono">
             {isLoadingModel ? (
               <span className="text-amber-400 flex items-center gap-1">
@@ -542,97 +612,73 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-slate-300 font-bold">{fps} FPS</span>
-                <span className="text-slate-500">| COCO-SSD WebGL</span>
+                <span className="text-slate-500">| WebGL</span>
               </>
             )}
           </div>
         </div>
 
-        {/* Lado Direito: Ferramentas de Desenho e Controles */}
+        {/* Ferramentas de Desenho e Controles */}
         <div className="flex items-center gap-2 flex-wrap">
           {!drawingMode ? (
             <>
-              {/* Botão Desenhar Retângulo */}
               <button
                 onClick={() => startDrawing('rectangle')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-300 text-xs font-medium transition-all shadow-sm"
-                title="Desenhar novo Boxe Retangular (Clique e arraste)"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/60 text-cyan-300 text-xs font-bold transition-all shadow-sm"
+                title="Desenhar Boxe Retangular (Clique e arraste sobre a vaga)"
               >
-                <Square className="w-3.5 h-3.5 text-cyan-400" />
-                <span>+ Boxe Retângulo</span>
+                <Square className="w-3.5 h-3.5" />
+                <span>+ Desenhar Retângulo</span>
               </button>
 
-              {/* Botão Desenhar Polígono 4 Pontos */}
               <button
                 onClick={() => startDrawing('polygon')}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 text-slate-300 hover:text-teal-300 text-xs font-medium transition-all shadow-sm"
                 title="Desenhar Boxe em Perspectiva (Clique nos 4 cantos da vaga)"
               >
                 <Shapes className="w-3.5 h-3.5 text-teal-400" />
-                <span>+ Perspectiva (4 Pontos)</span>
+                <span>+ Perspectiva (4 Cantos)</span>
               </button>
 
-              {/* Alternar Câmera / Recarregar */}
               <button
                 onClick={startCamera}
                 className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white text-xs transition-colors"
-                title="Reiniciar Stream da Câmera"
+                title="Reiniciar Câmera"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
 
-              {/* Alternar Tela Cheia */}
               <button
                 onClick={toggleFullscreen}
                 className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white text-xs transition-colors"
-                title="Alternar Tela Cheia"
+                title="Tela Cheia"
               >
                 {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
               </button>
             </>
           ) : (
-            /* Modo Ativo de Desenho */
-            <div className="flex items-center gap-2 bg-cyan-950/80 p-1 rounded-xl border border-cyan-500/40">
-              <span className="text-xs font-semibold text-cyan-300 px-2 flex items-center gap-1">
-                <PenTool className="w-3.5 h-3.5 animate-pulse" />
-                {drawTool === 'rectangle' ? 'Arraste na tela para desenhar o Boxe' : `Clique nos 4 cantos da vaga (${currentPoints.length}/4)`}
+            <div className="flex items-center gap-2 bg-cyan-950/90 p-1.5 rounded-xl border border-cyan-500/50">
+              <span className="text-xs font-bold text-cyan-300 px-2 flex items-center gap-1.5">
+                {drawTool === 'rectangle'
+                  ? 'Clique e arraste para criar o Boxe'
+                  : `Clique nos 4 cantos da vaga (${drawingPoints.length}/4)`}
               </span>
 
-              {/* Nome do Boxe Input Rápido */}
-              <input
-                type="text"
-                value={activeBoxName}
-                onChange={e => setActiveBoxName(e.target.value)}
-                placeholder="Nome do Boxe"
-                className="px-2 py-1 rounded bg-slate-900 border border-cyan-800/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 w-28"
-              />
-
-              {/* Botão Concluir */}
-              <button
-                onClick={finishDrawing}
-                disabled={currentPoints.length < 3}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-slate-950 font-bold text-xs shadow transition-all"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Salvar Boxe</span>
-              </button>
-
-              {/* Botão Cancelar */}
               <button
                 onClick={cancelDrawing}
-                className="p-1 rounded-lg bg-slate-900 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-800 text-xs font-semibold transition-colors flex items-center gap-1"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" /> Cancelar
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Área de Visualização com Vídeo e Canvas Sobrepostos */}
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[440px] select-none">
+      {/* Área do Vídeo e Canvas Interativo */}
+      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[460px] select-none">
         
-        {/* Elemento de Vídeo HTML5 (Alimenta o WebGL e Canvas) */}
+        {/* Vídeo HTML5 (Alimenta a IA e o Canvas) */}
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-contain pointer-events-none opacity-0"
@@ -641,112 +687,132 @@ export const DockVisionCanvas: React.FC<DockVisionCanvasProps> = ({ onEditBox })
           autoPlay
         />
 
-        {/* Canvas Interativo de Alta Resolução */}
+        {/* Canvas de Alta Precisão */}
         <canvas
           ref={canvasRef}
-          width={1280}
-          height={720}
-          onMouseDown={handleCanvasMouseDown}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseUp={handleCanvasMouseUp}
-          className={`w-full h-full object-contain cursor-crosshair transition-opacity duration-300 ${
-            cameraActive ? 'opacity-100' : 'opacity-80'
-          }`}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          className="w-full h-full cursor-crosshair touch-none"
         />
 
-        {/* Notificações e Avisos de Erro de Câmera */}
-        {cameraError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-slate-950/90 text-center z-20">
-            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-3 shadow-lg">
-              <Camera className="w-7 h-7" />
-            </div>
-            <h3 className="text-lg font-bold text-white mb-1">Acesso à Câmera Bloqueado</h3>
-            <p className="text-sm text-slate-400 max-w-md mb-4">{cameraError}</p>
-            <div className="flex gap-2">
+        {/* PAINEL FLUTUANTE DE EDIÇÃO DO BOXE SELECIONADO */}
+        {selectedBox && !drawingMode && (
+          <div className="absolute top-4 left-4 z-20 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl backdrop-blur-xl flex flex-col gap-2.5 min-w-[240px] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedBox.color }} />
+                Editar Boxe
+              </span>
               <button
-                onClick={startCamera}
-                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs transition-colors"
+                onClick={() => setSelectedBoxId(null)}
+                className="text-slate-400 hover:text-white p-0.5"
+                title="Fechar Painel"
               >
-                Tentar Novamente
+                <X className="w-3.5 h-3.5" />
               </button>
+            </div>
+
+            {/* Input Nome do Boxe */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400 uppercase font-semibold">Nome</label>
+              <input
+                type="text"
+                value={selectedBox.name}
+                onChange={e => updateBox(selectedBox.id, { name: e.target.value })}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Seletor de Cores */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-slate-400 uppercase font-semibold">Cor:</span>
+              <div className="flex gap-1.5">
+                {['#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => updateBox(selectedBox.id, { color: c })}
+                    className={`w-5 h-5 rounded-full border transition-transform ${
+                      selectedBox.color === c ? 'scale-125 border-white' : 'border-transparent hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Instruções de Arraste */}
+            <div className="text-[10px] text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800 flex items-center gap-1.5">
+              <Move className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Arraste o interior para mover o boxe ou arraste os cantos brancos.</span>
+            </div>
+
+            {/* Ações: Duplicar e Excluir */}
+            <div className="flex gap-2 pt-1 border-t border-slate-800">
+              <button
+                onClick={() => duplicateBox(selectedBox.id)}
+                className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1 border border-slate-700 transition-colors"
+                title="Duplicar este Boxe"
+              >
+                <Copy className="w-3 h-3" />
+                <span>Duplicar</span>
+              </button>
+
               <button
                 onClick={() => {
-                  const sampleCam = cameras.find(c => c.type === 'sample_video');
-                  if (sampleCam) setActiveCameraId(sampleCam.id);
+                  if (confirm(`Excluir ${selectedBox.name}?`)) deleteBox(selectedBox.id);
                 }}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+                className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
+                title="Excluir Boxe"
               >
-                Usar Simulação de Vídeo
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
         )}
 
-        {/* Dica de Orientação ao Desenhar */}
+        {/* Dica ao desenhar */}
         {drawingMode && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-slate-950/90 border border-cyan-500/50 text-cyan-300 text-xs shadow-xl backdrop-blur-md flex items-center gap-2 pointer-events-none animate-bounce">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-slate-950/90 border border-cyan-500/60 text-cyan-300 text-xs shadow-xl backdrop-blur-md flex items-center gap-2 pointer-events-none">
             <Info className="w-4 h-4 text-cyan-400" />
             <span>
               {drawTool === 'rectangle'
-                ? 'Clique no canto superior e arraste até o canto inferior da vaga no chão.'
-                : 'Clique nos 4 cantos da vaga no pátio para compensar o ângulo da câmera.'}
+                ? 'Clique no primeiro canto e arraste até o canto oposto da vaga.'
+                : 'Clique nos 4 cantos da vaga no pátio. O boxe fechará automaticamente.'}
             </span>
           </div>
         )}
       </div>
 
-      {/* Barra Inferior com Lista Rápida de Boxes e Ações */}
-      <div className="p-3 bg-slate-950/90 border-t border-slate-800/80 flex items-center justify-between gap-3 flex-wrap">
+      {/* Barra Inferior com Lista de Docas e Atalhos */}
+      <div className="p-3 bg-slate-950/95 border-t border-slate-800 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar py-1">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0">
-            Docas Configuradas:
+            Docas:
           </span>
 
           {boxes.map(box => (
-            <div
+            <button
               key={box.id}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+              onClick={() => setSelectedBoxId(box.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
                 selectedBoxId === box.id
-                  ? 'bg-slate-800 border-cyan-500/60 text-white'
-                  : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-850'
+                  ? 'bg-cyan-950/80 border-cyan-400 text-white shadow-lg shadow-cyan-950/40'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-850'
               }`}
             >
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: box.color }} />
-              <span className="font-medium">{box.name}</span>
-
-              {/* Botão de teste manual de ocupação */}
-              <button
-                onClick={() => manualToggleOccupied(box.id)}
-                title={box.status === 'occupied' ? 'Liberar boxe manualmente' : 'Simular entrada manual'}
-                className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-              >
-                {box.status === 'occupied' ? 'Liberar' : 'Simular'}
-              </button>
-
-              {/* Botão de Excluir Boxe */}
-              <button
-                onClick={() => {
-                  if (confirm(`Remover "${box.name}"?`)) deleteBox(box.id);
-                }}
-                className="text-slate-500 hover:text-rose-400 p-0.5 transition-colors"
-                title="Excluir este Boxe"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
+              <span>{box.name}</span>
+            </button>
           ))}
-
-          {boxes.length === 0 && (
-            <span className="text-xs text-slate-500 italic">
-              Nenhum boxe desenhado. Clique em "+ Boxe Retângulo" acima para criar.
-            </span>
-          )}
         </div>
 
-        {/* Dica de Calibração */}
-        <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1.5">
-          <Sparkles className="w-3 h-3 text-cyan-400" />
-          <span>Arraste os círculos brancos para ajustar os cantos da vaga em tempo real</span>
+        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+          <Move className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Clique em qualquer boxe para mover, editar ou redimensionar</span>
         </div>
       </div>
 

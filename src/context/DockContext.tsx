@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DockBox,
   TruckRecord,
@@ -10,7 +10,7 @@ import {
   Point2D,
   TruckDetection
 } from '../types/dock';
-import { isTruckInsideDockBox, formatDuration } from '../utils/boxGeometry';
+import { isTruckInsideDockBox, formatDuration, moveBoxPointsByDelta } from '../utils/boxGeometry';
 import { playEntryTone, playExitTone } from '../utils/audio';
 
 const STORAGE_KEY_BOXES = 'dock_vision_boxes_v1';
@@ -18,12 +18,11 @@ const STORAGE_KEY_RECORDS = 'dock_vision_records_v1';
 const STORAGE_KEY_SETTINGS = 'dock_vision_settings_v1';
 const STORAGE_KEY_CAMERAS = 'dock_vision_cameras_v1';
 
-// Boxes padrão com 4 vértices normalizados caso o usuário entre pela primeira vez
 const DEFAULT_BOXES: DockBox[] = [
   {
     id: 'box-1',
     name: 'Boxe 1 - Docas Sul',
-    color: '#06b6d4', // Ciano
+    color: '#06b6d4',
     points: [
       { x: 0.08, y: 0.35 },
       { x: 0.45, y: 0.35 },
@@ -39,13 +38,11 @@ const DEFAULT_BOXES: DockBox[] = [
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck'],
-    consecutiveDetections: 0,
-    consecutiveAbsences: 0,
   },
   {
     id: 'box-2',
     name: 'Boxe 2 - Carga Geral',
-    color: '#10b981', // Esmeralda
+    color: '#10b981',
     points: [
       { x: 0.54, y: 0.35 },
       { x: 0.92, y: 0.35 },
@@ -61,14 +58,12 @@ const DEFAULT_BOXES: DockBox[] = [
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck'],
-    consecutiveDetections: 0,
-    consecutiveAbsences: 0,
   }
 ];
 
 const DEFAULT_SETTINGS: DockSettings = {
   confidenceThreshold: 0.40,
-  inferenceIntervalMs: 250,
+  inferenceIntervalMs: 350,
   allowTruck: true,
   allowBus: true,
   allowCar: false,
@@ -86,7 +81,7 @@ const DEFAULT_CAMERAS: CameraSourceConfig[] = [
   },
   {
     id: 'cam-ip-1',
-    name: 'Câmera IP Docas (Exemplo RTSP/MJPEG)',
+    name: 'Câmera IP Docas (RTSP/MJPEG)',
     type: 'ip_camera',
     ipUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=1280&q=80',
   },
@@ -104,19 +99,17 @@ interface DockContextType {
   cameras: CameraSourceConfig[];
   activeCameraId: string;
   settings: DockSettings;
-  isDrawingMode: boolean;
-  drawingShape: 'rectangle' | 'polygon';
   selectedBoxId: string | null;
   activeDeviceId: string;
 
   // Actions
   setActiveCameraId: (id: string) => void;
-  setIsDrawingMode: (active: boolean) => void;
-  setDrawingShape: (shape: 'rectangle' | 'polygon') => void;
   setSelectedBoxId: (id: string | null) => void;
   updateSettings: (newSettings: Partial<DockSettings>) => void;
   addBox: (box: Omit<DockBox, 'id' | 'status' | 'currentTruck' | 'lastSession'>) => string;
   updateBox: (id: string, updates: Partial<DockBox>) => void;
+  moveBox: (id: string, deltaX: number, deltaY: number) => void;
+  duplicateBox: (id: string) => void;
   deleteBox: (id: string) => void;
   addCamera: (cam: CameraSourceConfig) => void;
   updateCamera: (id: string, updates: Partial<CameraSourceConfig>) => void;
@@ -127,7 +120,6 @@ interface DockContextType {
   processDetections: (detections: TruckDetection[]) => void;
   manualToggleOccupied: (boxId: string) => void;
 
-  // Estatísticas calculadas
   stats: {
     totalRecords: number;
     currentlyOccupied: number;
@@ -147,12 +139,22 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cameras, setCameras] = useState<CameraSourceConfig[]>(DEFAULT_CAMERAS);
   const [activeCameraId, setActiveCameraId] = useState<string>('cam-main');
   const [settings, setSettings] = useState<DockSettings>(DEFAULT_SETTINGS);
-
-  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(false);
-  const [drawingShape, setDrawingShape] = useState<'rectangle' | 'polygon'>('rectangle');
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
 
-  // Identificador deste cliente (aparelho)
+  // Ref para sincronização síncrona nos loops de renderização sem disparar re-render
+  const boxesRef = useRef<DockBox[]>(boxes);
+  boxesRef.current = boxes;
+
+  const recordsRef = useRef<TruckRecord[]>(records);
+  recordsRef.current = records;
+
+  // Contadores de histerese e presença mantidos fora do React State para evitar re-render em massa!
+  const boxCountersRef = useRef<Record<string, {
+    consecutiveDetections: number;
+    consecutiveAbsences: number;
+    lastSeenTime: number;
+  }>>({});
+
   const [activeDeviceId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const stored = sessionStorage.getItem('dock_device_id');
@@ -184,37 +186,46 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Salvar no localStorage sempre que boxes mudam
+  // Salvar boxes com Debounce (apenas quando o usuário cria/edita/remove)
+  const saveBoxesTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(STORAGE_KEY_BOXES, JSON.stringify(boxes));
-    } catch (e) {
-      console.warn('Erro ao salvar boxes no storage:', e);
-    }
+    if (saveBoxesTimerRef.current) clearTimeout(saveBoxesTimerRef.current);
+
+    saveBoxesTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY_BOXES, JSON.stringify(boxes));
+      } catch (e) {
+        console.warn('Erro ao salvar boxes:', e);
+      }
+    }, 1000);
+
+    return () => {
+      if (saveBoxesTimerRef.current) clearTimeout(saveBoxesTimerRef.current);
+    };
   }, [boxes]);
 
-  // Salvar records no localStorage
+  // Salvar registros
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
     } catch (e) {
-      console.warn('Erro ao salvar registros no storage:', e);
+      console.warn('Erro ao salvar registros:', e);
     }
   }, [records]);
 
-  // Salvar settings no localStorage
+  // Salvar settings
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
     } catch (e) {
-      console.warn('Erro ao salvar configurações:', e);
+      console.warn('Erro ao salvar settings:', e);
     }
   }, [settings]);
 
-  // Sincronização via BroadcastChannel (comunicação em tempo real entre abas no mesmo navegador)
+  // BroadcastChannel para sincronização entre abas
   useEffect(() => {
     if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
 
@@ -223,12 +234,8 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     channel.onmessage = (event: MessageEvent<SyncPayload>) => {
       const data = event.data;
       if (data && data.senderDeviceId !== activeDeviceId) {
-        if (data.boxes) {
-          setBoxes(data.boxes);
-        }
-        if (data.records) {
-          setRecords(data.records);
-        }
+        if (data.boxes) setBoxes(data.boxes);
+        if (data.records) setRecords(data.records);
       }
     };
 
@@ -237,7 +244,6 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [activeDeviceId]);
 
-  // Função para transmitir atualização para outros aparelhos/abas
   const broadcastSync = useCallback((updatedBoxes: DockBox[], updatedRecords: TruckRecord[]) => {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
@@ -256,15 +262,16 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [activeCameraId, activeDeviceId]);
 
-  // Atualizador do cronômetro em tempo real (1 segundo)
+  // Cronômetro em tempo real de 1s (apenas atualiza boxes ocupados)
   useEffect(() => {
     const timer = setInterval(() => {
       setBoxes(prevBoxes => {
-        let changed = false;
+        let hasOccupied = false;
+        const now = Date.now();
+
         const updated = prevBoxes.map(box => {
           if (box.status === 'occupied' && box.currentTruck) {
-            changed = true;
-            const now = Date.now();
+            hasOccupied = true;
             const elapsed = Math.floor((now - box.currentTruck.entryTime) / 1000);
             return {
               ...box,
@@ -276,173 +283,193 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           return box;
         });
-        return changed ? updated : prevBoxes;
+
+        return hasOccupied ? updated : prevBoxes;
       });
     }, 1000);
 
     return () => clearInterval(timer);
   }, []);
 
-  // Processamento e Filtragem Geométrica de Detecções de IA
+  // Processamento de IA OTIMIZADO: Só atualiza State quando o status EFETIVAMENTE muda!
   const processDetections = useCallback((detections: TruckDetection[]) => {
     const now = Date.now();
+    const currentBoxes = boxesRef.current;
+    let stateChanged = false;
+    const newRecords: TruckRecord[] = [];
 
-    setBoxes(prevBoxes => {
-      let stateChanged = false;
-      const newRecords: TruckRecord[] = [];
+    const allowedDetections = detections.filter(d => {
+      const cls = d.class.toLowerCase();
+      if (cls === 'truck' && settings.allowTruck) return true;
+      if (cls === 'bus' && settings.allowBus) return true;
+      if (cls === 'car' && settings.allowCar) return true;
+      return false;
+    });
 
-      const nextBoxes = prevBoxes.map(box => {
-        // Ignora se o boxe não pertence à câmera atual
-        if (box.cameraId !== activeCameraId) return box;
+    const nextBoxes = currentBoxes.map(box => {
+      if (box.cameraId !== activeCameraId) return box;
 
-        // Filtra detecções que pertençam às classes alvo do boxe (ex: 'truck')
-        const allowedDetections = detections.filter(d => {
-          const cls = d.class.toLowerCase();
-          if (cls === 'truck' && settings.allowTruck) return true;
-          if (cls === 'bus' && settings.allowBus) return true;
-          if (cls === 'car' && settings.allowCar) return true;
-          return false;
-        });
-
-        // Avalia se alguma detecção está DENTRO do boxe desenhado
-        let foundInside: TruckDetection | null = null;
-        let bestOverlap = 0;
-
-        for (const det of allowedDetections) {
-          const evalResult = isTruckInsideDockBox(det, box);
-          if (evalResult.isInside) {
-            if (evalResult.overlap > bestOverlap || !foundInside) {
-              bestOverlap = evalResult.overlap;
-              foundInside = det;
-            }
-          }
-        }
-
-        const debounceThreshold = box.entryDebounceFrames || 3;
-        const exitGraceMs = (box.exitGraceSeconds || 3.5) * 1000;
-
-        let consecutiveDetections = box.consecutiveDetections || 0;
-        let consecutiveAbsences = box.consecutiveAbsences || 0;
-        let status = box.status;
-        let currentTruck = box.currentTruck ? { ...box.currentTruck } : null;
-        let lastSession = box.lastSession ? { ...box.lastSession } : null;
-
-        if (foundInside) {
-          consecutiveDetections++;
-          consecutiveAbsences = 0;
-
-          if (status === 'empty') {
-            if (consecutiveDetections >= debounceThreshold) {
-              // Entrada confirmada!
-              status = 'occupied';
-              currentTruck = {
-                entryTime: now,
-                durationSeconds: 0,
-                confidence: foundInside.score,
-                label: foundInside.class,
-                lastSeenTime: now,
-              };
-              stateChanged = true;
-              if (settings.soundAlerts) playEntryTone();
-            } else {
-              // Em aproximação (detectado por poucos frames)
-              status = 'approaching';
-              stateChanged = true;
-            }
-          } else if (status === 'approaching') {
-            if (consecutiveDetections >= debounceThreshold) {
-              status = 'occupied';
-              currentTruck = {
-                entryTime: now,
-                durationSeconds: 0,
-                confidence: foundInside.score,
-                label: foundInside.class,
-                lastSeenTime: now,
-              };
-              stateChanged = true;
-              if (settings.soundAlerts) playEntryTone();
-            }
-          } else if (status === 'occupied' && currentTruck) {
-            // Atualiza lastSeenTime e confiança
-            currentTruck.lastSeenTime = now;
-            currentTruck.confidence = Math.max(currentTruck.confidence, foundInside.score);
-          }
-        } else {
-          // Não foi detectado nenhum caminhão dentro deste boxe neste frame
-          consecutiveAbsences++;
-          consecutiveDetections = 0;
-
-          if (status === 'approaching') {
-            status = 'empty';
-            stateChanged = true;
-          } else if (status === 'occupied' && currentTruck) {
-            const timeSinceLastSeen = now - currentTruck.lastSeenTime;
-
-            // Se o tempo sem detecção exceder a tolerância (exitGraceMs), confirma saída definitiva!
-            if (timeSinceLastSeen >= exitGraceMs) {
-              const finalDurationSec = Math.max(1, Math.floor((now - currentTruck.entryTime) / 1000));
-
-              // Registra histórico final
-              const rec: TruckRecord = {
-                id: 'rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-                boxId: box.id,
-                boxName: box.name,
-                entryTime: currentTruck.entryTime,
-                exitTime: now,
-                durationSeconds: finalDurationSec,
-                formattedDuration: formatDuration(finalDurationSec),
-                label: currentTruck.label,
-                confidence: currentTruck.confidence,
-                cameraId: box.cameraId,
-              };
-
-              newRecords.push(rec);
-
-              lastSession = {
-                entryTime: currentTruck.entryTime,
-                exitTime: now,
-                durationSeconds: finalDurationSec,
-              };
-
-              status = 'empty';
-              currentTruck = null;
-              stateChanged = true;
-
-              if (settings.soundAlerts) playExitTone();
-            }
-          }
-        }
-
-        return {
-          ...box,
-          status,
-          currentTruck,
-          lastSession,
-          consecutiveDetections,
-          consecutiveAbsences,
+      if (!boxCountersRef.current[box.id]) {
+        boxCountersRef.current[box.id] = {
+          consecutiveDetections: 0,
+          consecutiveAbsences: 0,
+          lastSeenTime: now,
         };
-      });
+      }
+      const counters = boxCountersRef.current[box.id];
 
-      if (newRecords.length > 0) {
-        setRecords(prev => {
-          const updated = [...newRecords, ...prev];
-          broadcastSync(nextBoxes, updated);
-          return updated;
-        });
-      } else if (stateChanged) {
-        broadcastSync(nextBoxes, records);
+      // Avalia se há caminhão dentro do boxe
+      let foundInside: TruckDetection | null = null;
+      let bestOverlap = 0;
+
+      for (let i = 0; i < allowedDetections.length; i++) {
+        const det = allowedDetections[i];
+        const evalRes = isTruckInsideDockBox(det, box);
+        if (evalRes.isInside && evalRes.overlap > bestOverlap) {
+          bestOverlap = evalRes.overlap;
+          foundInside = det;
+        }
       }
 
-      return stateChanged ? nextBoxes : prevBoxes;
-    });
-  }, [activeCameraId, settings, broadcastSync, records]);
+      const debounceThreshold = box.entryDebounceFrames || 3;
+      const exitGraceMs = (box.exitGraceSeconds || 3.5) * 1000;
 
-  // Ação manual de alternar ocupação (útil para testes ou intervenção manual)
+      if (foundInside) {
+        counters.consecutiveDetections++;
+        counters.consecutiveAbsences = 0;
+        counters.lastSeenTime = now;
+
+        if (box.status === 'empty') {
+          if (counters.consecutiveDetections >= debounceThreshold) {
+            // CONFIRMADO: Vazio -> Ocupado
+            stateChanged = true;
+            if (settings.soundAlerts) playEntryTone();
+            return {
+              ...box,
+              status: 'occupied' as const,
+              currentTruck: {
+                entryTime: now,
+                durationSeconds: 0,
+                confidence: foundInside.score,
+                label: foundInside.class,
+                lastSeenTime: now,
+              }
+            };
+          } else {
+            stateChanged = true;
+            return { ...box, status: 'approaching' as const };
+          }
+        } else if (box.status === 'approaching') {
+          if (counters.consecutiveDetections >= debounceThreshold) {
+            stateChanged = true;
+            if (settings.soundAlerts) playEntryTone();
+            return {
+              ...box,
+              status: 'occupied' as const,
+              currentTruck: {
+                entryTime: now,
+                durationSeconds: 0,
+                confidence: foundInside.score,
+                label: foundInside.class,
+                lastSeenTime: now,
+              }
+            };
+          }
+        }
+      } else {
+        counters.consecutiveAbsences++;
+        counters.consecutiveDetections = 0;
+
+        if (box.status === 'approaching') {
+          stateChanged = true;
+          return { ...box, status: 'empty' as const };
+        } else if (box.status === 'occupied' && box.currentTruck) {
+          const timeSinceLastSeen = now - counters.lastSeenTime;
+
+          if (timeSinceLastSeen >= exitGraceMs) {
+            // CONFIRMADO: Ocupado -> Liberado
+            const finalDurationSec = Math.max(1, Math.floor((now - box.currentTruck.entryTime) / 1000));
+
+            const rec: TruckRecord = {
+              id: 'rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+              boxId: box.id,
+              boxName: box.name,
+              entryTime: box.currentTruck.entryTime,
+              exitTime: now,
+              durationSeconds: finalDurationSec,
+              formattedDuration: formatDuration(finalDurationSec),
+              label: box.currentTruck.label,
+              confidence: box.currentTruck.confidence,
+              cameraId: box.cameraId,
+            };
+
+            newRecords.push(rec);
+            stateChanged = true;
+            if (settings.soundAlerts) playExitTone();
+
+            return {
+              ...box,
+              status: 'empty' as const,
+              currentTruck: null,
+              lastSession: {
+                entryTime: box.currentTruck.entryTime,
+                exitTime: now,
+                durationSeconds: finalDurationSec,
+              }
+            };
+          }
+        }
+      }
+
+      return box;
+    });
+
+    if (newRecords.length > 0) {
+      setRecords(prev => [...newRecords, ...prev]);
+    }
+
+    if (stateChanged) {
+      setBoxes(nextBoxes);
+      broadcastSync(nextBoxes, recordsRef.current);
+    }
+  }, [activeCameraId, settings, broadcastSync]);
+
+  // Mover Boxe Inteiro por Delta
+  const moveBox = useCallback((id: string, deltaX: number, deltaY: number) => {
+    setBoxes(prev => prev.map(b => {
+      if (b.id !== id) return b;
+      return {
+        ...b,
+        points: moveBoxPointsByDelta(b.points, deltaX, deltaY)
+      };
+    }));
+  }, []);
+
+  // Duplicar Boxe
+  const duplicateBox = useCallback((id: string) => {
+    const existing = boxes.find(b => b.id === id);
+    if (!existing) return;
+
+    const newBox: DockBox = {
+      ...existing,
+      id: 'box-' + Date.now(),
+      name: `${existing.name} (Cópia)`,
+      points: moveBoxPointsByDelta(existing.points, 0.04, 0.04),
+      status: 'empty',
+      currentTruck: null,
+      lastSession: null,
+    };
+
+    setBoxes(prev => [...prev, newBox]);
+    setSelectedBoxId(newBox.id);
+  }, [boxes]);
+
+  // Alternar ocupação manual
   const manualToggleOccupied = useCallback((boxId: string) => {
     setBoxes(prev => {
-      const updated = prev.map(b => {
+      const now = Date.now();
+      return prev.map(b => {
         if (b.id !== boxId) return b;
-        const now = Date.now();
         if (b.status === 'occupied' && b.currentTruck) {
           const duration = Math.max(1, Math.floor((now - b.currentTruck.entryTime) / 1000));
           const rec: TruckRecord = {
@@ -477,18 +504,16 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
             currentTruck: {
               entryTime: now,
               durationSeconds: 0,
-              confidence: 0.95,
+              confidence: 0.98,
               label: 'truck',
               lastSeenTime: now,
             }
           };
         }
       });
-      return updated;
     });
   }, [settings.soundAlerts]);
 
-  // Adicionar Box
   const addBox = useCallback((boxData: Omit<DockBox, 'id' | 'status' | 'currentTruck' | 'lastSession'>) => {
     const id = 'box-' + Date.now();
     const newBox: DockBox = {
@@ -497,51 +522,34 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: 'empty',
       currentTruck: null,
       lastSession: null,
-      consecutiveDetections: 0,
-      consecutiveAbsences: 0,
     };
     setBoxes(prev => [...prev, newBox]);
+    setSelectedBoxId(id);
     return id;
   }, []);
 
-  // Atualizar Box
   const updateBox = useCallback((id: string, updates: Partial<DockBox>) => {
     setBoxes(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
   }, []);
 
-  // Excluir Box
   const deleteBox = useCallback((id: string) => {
     setBoxes(prev => prev.filter(b => b.id !== id));
     if (selectedBoxId === id) setSelectedBoxId(null);
   }, [selectedBoxId]);
 
-  // Câmeras
-  const addCamera = useCallback((cam: CameraSourceConfig) => {
-    setCameras(prev => [...prev, cam]);
-  }, []);
-
+  const addCamera = useCallback((cam: CameraSourceConfig) => setCameras(prev => [...prev, cam]), []);
   const updateCamera = useCallback((id: string, updates: Partial<CameraSourceConfig>) => {
     setCameras(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   }, []);
-
-  const deleteCamera = useCallback((id: string) => {
-    setCameras(prev => prev.filter(c => c.id !== id));
-  }, []);
+  const deleteCamera = useCallback((id: string) => setCameras(prev => prev.filter(c => c.id !== id)), []);
 
   const clearHistory = useCallback(() => {
-    if (confirm('Tem certeza que deseja zerar o histórico de atendimentos?')) {
-      setRecords([]);
-    }
+    if (confirm('Zerar o histórico de atendimentos?')) setRecords([]);
   }, []);
 
-  // Exportar CSV
   const exportHistoryCSV = useCallback(() => {
-    if (records.length === 0) {
-      alert('Nenhum registro para exportar.');
-      return;
-    }
-
-    const headers = ['ID', 'Boxe', 'Horario_Entrada', 'Horario_Saida', 'Duracao_Segundos', 'Duracao_Formatada', 'Tipo', 'Confianca'];
+    if (records.length === 0) return alert('Nenhum registro para exportar.');
+    const headers = ['ID', 'Boxe', 'Entrada', 'Saida', 'Segundos', 'Duracao', 'Veiculo', 'Confianca'];
     const rows = records.map(r => [
       r.id,
       `"${r.boxName.replace(/"/g, '""')}"`,
@@ -552,34 +560,25 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       r.label,
       `${(r.confidence * 100).toFixed(0)}%`
     ]);
-
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `relatorio_docas_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
+    link.href = encodeURI(csvContent);
+    link.download = `docas_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
-    document.body.removeChild(link);
   }, [records]);
 
-  // Exportar JSON
   const exportHistoryJSON = useCallback(() => {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(records, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `docas_backup_${new Date().toISOString().slice(0, 10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    const link = document.createElement('a');
+    link.href = dataStr;
+    link.download = `docas_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
   }, [records]);
 
-  // Atualizar Configurações Gerais
   const updateSettings = useCallback((newSettings: Partial<DockSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
 
-  // Métricas calculadas para Dashboard
   const stats = useMemo(() => {
     const totalRecords = records.length;
     const currentlyOccupied = boxes.filter(b => b.status === 'occupied').length;
@@ -639,17 +638,15 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         cameras,
         activeCameraId,
         settings,
-        isDrawingMode,
-        drawingShape,
         selectedBoxId,
         activeDeviceId,
         setActiveCameraId,
-        setIsDrawingMode,
-        setDrawingShape,
         setSelectedBoxId,
         updateSettings,
         addBox,
         updateBox,
+        moveBox,
+        duplicateBox,
         deleteBox,
         addCamera,
         updateCamera,
@@ -669,8 +666,6 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useDock = () => {
   const context = useContext(DockContext);
-  if (!context) {
-    throw new Error('useDock must be used within a DockProvider');
-  }
+  if (!context) throw new Error('useDock must be used within DockProvider');
   return context;
 };

@@ -1,7 +1,99 @@
 import { Point2D, DockBox, TruckDetection } from '../types/dock';
 
+export interface VideoRenderDimensions {
+  renderW: number;
+  renderH: number;
+  offsetX: number;
+  offsetY: number;
+}
+
 /**
- * Normaliza um ponto em pixels (relativo ao tamanho visual do canvas/vídeo) para 0.0 - 1.0
+ * Calcula a área de desenho real (com letterboxing proporcional) do vídeo dentro do elemento Canvas.
+ * Essencial para que o clique do mouse e o desenho coincidam 100% com os pixels do vídeo!
+ */
+export function getVideoRenderDimensions(
+  canvasW: number,
+  canvasH: number,
+  videoW: number,
+  videoH: number
+): VideoRenderDimensions {
+  if (canvasW <= 0 || canvasH <= 0 || videoW <= 0 || videoH <= 0) {
+    return { renderW: canvasW, renderH: canvasH, offsetX: 0, offsetY: 0 };
+  }
+
+  const canvasAspect = canvasW / canvasH;
+  const videoAspect = videoW / videoH;
+
+  let renderW: number;
+  let renderH: number;
+  let offsetX: number;
+  let offsetY: number;
+
+  if (videoAspect > canvasAspect) {
+    // Barras pretas verticais (em cima/baixo)
+    renderW = canvasW;
+    renderH = canvasW / videoAspect;
+    offsetX = 0;
+    offsetY = (canvasH - renderH) / 2;
+  } else {
+    // Barras pretas horizontais (nas laterais)
+    renderH = canvasH;
+    renderW = canvasH * videoAspect;
+    offsetX = (canvasW - renderW) / 2;
+    offsetY = 0;
+  }
+
+  return { renderW, renderH, offsetX, offsetY };
+}
+
+/**
+ * Converte coordenadas do mouse ou toque na tela (clientX, clientY)
+ * para coordenadas normalizadas (0.0 a 1.0) dentro do vídeo.
+ */
+export function screenToNormalizedVideoCoord(
+  clientX: number,
+  clientY: number,
+  canvas: HTMLCanvasElement,
+  videoW: number,
+  videoH: number
+): Point2D | null {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const rawX = clientX - rect.left;
+  const rawY = clientY - rect.top;
+
+  const dims = getVideoRenderDimensions(rect.width, rect.height, videoW, videoH);
+
+  // Subtrai o offset de letterbox e normaliza
+  const normX = (rawX - dims.offsetX) / dims.renderW;
+  const normY = (rawY - dims.offsetY) / dims.renderH;
+
+  return {
+    x: Math.max(0, Math.min(1, normX)),
+    y: Math.max(0, Math.min(1, normY))
+  };
+}
+
+/**
+ * Converte um ponto normalizado (0.0 a 1.0) para coordenadas de renderização no canvas.
+ */
+export function normalizedToCanvasCoord(
+  point: Point2D,
+  canvasW: number,
+  canvasH: number,
+  videoW: number,
+  videoH: number
+): Point2D {
+  const dims = getVideoRenderDimensions(canvasW, canvasH, videoW, videoH);
+  return {
+    x: dims.offsetX + point.x * dims.renderW,
+    y: dims.offsetY + point.y * dims.renderH
+  };
+}
+
+/**
+ * Normaliza um ponto em pixels para 0.0 - 1.0
  */
 export function normalizePoint(p: Point2D, width: number, height: number): Point2D {
   if (width <= 0 || height <= 0) return { x: 0, y: 0 };
@@ -12,7 +104,7 @@ export function normalizePoint(p: Point2D, width: number, height: number): Point
 }
 
 /**
- * Converte um ponto normalizado (0.0 - 1.0) para coordenadas em pixels de uma dada resolução
+ * Converte um ponto normalizado para coordenadas em pixels
  */
 export function denormalizePoint(p: Point2D, width: number, height: number): Point2D {
   return {
@@ -23,8 +115,7 @@ export function denormalizePoint(p: Point2D, width: number, height: number): Poi
 
 /**
  * Algoritmo de Ray-Casting (Jordan Curve Theorem)
- * Testa com precisão matemática se um ponto está estritamente dentro de um polígono de N vértices.
- * Funciona para qualquer polígono (retângulos, trapézios de perspectiva, formas livres).
+ * Testa com precisão se um ponto está dentro de qualquer polígono.
  */
 export function isPointInPolygon(point: Point2D, polygon: Point2D[]): boolean {
   if (!polygon || polygon.length < 3) return false;
@@ -48,7 +139,27 @@ export function isPointInPolygon(point: Point2D, polygon: Point2D[]): boolean {
 }
 
 /**
- * Calcula a área de um polígono usando a fórmula Shoelace (Gauß)
+ * Move todos os vértices de um boxe por um delta (dx, dy) mantendo dentro dos limites 0-1
+ */
+export function moveBoxPointsByDelta(points: Point2D[], deltaX: number, deltaY: number): Point2D[] {
+  // Encontra limites atuais
+  const minX = Math.min(...points.map(p => p.x));
+  const maxX = Math.max(...points.map(p => p.x));
+  const minY = Math.min(...points.map(p => p.y));
+  const maxY = Math.max(...points.map(p => p.y));
+
+  // Ajusta delta para não estourar os limites da tela (0 a 1)
+  const clampedDx = Math.max(-minX, Math.min(1 - maxX, deltaX));
+  const clampedDy = Math.max(-minY, Math.min(1 - maxY, deltaY));
+
+  return points.map(p => ({
+    x: p.x + clampedDx,
+    y: p.y + clampedDy
+  }));
+}
+
+/**
+ * Calcula a área de um polígono usando Shoelace
  */
 export function calculatePolygonArea(polygon: Point2D[]): number {
   if (polygon.length < 3) return 0;
@@ -62,15 +173,10 @@ export function calculatePolygonArea(polygon: Point2D[]): number {
 }
 
 /**
- * Calcula a porcentagem de sobreposição (overlap ratio) entre a Bounding Box do caminhão
- * e o Polígono do Box desenhado.
- * 
- * Utiliza amostragem de grade densa (8x8 = 64 pontos de controle) dentro da bounding box.
- * Esse método é imune a instabilidades numéricas de interpolação poligonal e calcula
- * a fração exata do caminhão que repousa dentro da área do boxe.
+ * Calcula o overlap percentual entre a BoundingBox e o Polígono
  */
 export function calculateBoxOverlapRatio(
-  bboxNorm: [number, number, number, number], // [x, y, w, h] normalizados (0-1)
+  bboxNorm: [number, number, number, number],
   polygonNorm: Point2D[],
   gridResolution: number = 8
 ): number {
@@ -82,7 +188,6 @@ export function calculateBoxOverlapRatio(
 
   for (let ix = 0; ix < gridResolution; ix++) {
     for (let iy = 0; iy < gridResolution; iy++) {
-      // Amostra cada ponto no centro da sua célula de grade
       const sampleX = bx + (ix + 0.5) * (bw / gridResolution);
       const sampleY = by + (iy + 0.5) * (bh / gridResolution);
 
@@ -96,12 +201,7 @@ export function calculateBoxOverlapRatio(
 }
 
 /**
- * Determina com 100% de precisão se um caminhão detectado está realmente dentro de um Boxe desenhado.
- * 
- * Combina:
- * 1. Ponto de Contato com o Solo (rodas/eixos do caminhão onde ele toca a vaga no chão)
- * 2. Centroide do veículo
- * 3. Proporção de Sobreposição volumétrica (Overlap Ratio)
+ * Avalia se o caminhão está dentro do Boxe com alta precisão
  */
 export function isTruckInsideDockBox(
   detection: TruckDetection,
@@ -114,13 +214,8 @@ export function isTruckInsideDockBox(
     return { isInside: false, overlap: 0, reason: 'Polígono incompleto' };
   }
 
-  // 1. Calcula o overlap volumétrico por amostragem
   const overlap = calculateBoxOverlapRatio(normalizedBbox, points, 8);
-
-  // 2. Testa ponto de contato no solo (onde as rodas tocam a vaga)
   const isGroundInside = isPointInPolygon(groundContact, points);
-
-  // 3. Testa ponto centroide
   const isCentroidInside = isPointInPolygon(centroid, points);
 
   const threshold = dockBox.overlapThreshold ?? 0.25;
@@ -143,23 +238,20 @@ export function isTruckInsideDockBox(
     };
   }
 
-  // Modo Padrão Industrial ('ground' ou combinado de alta precisão):
-  // Um caminhão está no boxe se:
-  // (a) As rodas/solo estão dentro do boxe E há pelo menos 15% de overlap, OU
-  // (b) Mais de 35% do volume do caminhão está dentro da vaga (mesmo com câmera de ângulo muito raso).
-  const isInside = (isGroundInside && overlap >= 0.15) || overlap >= Math.max(0.35, threshold);
+  // Padrão: Solo dentro OU overlap maior que limiar
+  const isInside = (isGroundInside && overlap >= 0.12) || overlap >= Math.max(0.30, threshold);
 
   return {
     isInside,
     overlap,
     reason: isInside 
-      ? `Detectado no chão e ${(overlap * 100).toFixed(0)}% de área`
-      : 'Fora da área delimitada'
+      ? `Detectado no solo com ${(overlap * 100).toFixed(0)}% de área`
+      : 'Fora da vaga'
   };
 }
 
 /**
- * Cria os 4 pontos para um retângulo normalizado a partir de 2 cantos (arraste do mouse)
+ * Cria os 4 pontos normalizados de um retângulo a partir de 2 vértices opostos
  */
 export function createRectanglePoints(p1: Point2D, p2: Point2D): Point2D[] {
   const minX = Math.min(p1.x, p2.x);
@@ -168,15 +260,15 @@ export function createRectanglePoints(p1: Point2D, p2: Point2D): Point2D[] {
   const maxY = Math.max(p1.y, p2.y);
 
   return [
-    { x: minX, y: minY }, // Superior Esquerdo
-    { x: maxX, y: minY }, // Superior Direito
-    { x: maxX, y: maxY }, // Inferior Direito
-    { x: minX, y: maxY }, // Inferior Esquerdo
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
   ];
 }
 
 /**
- * Formata duração em segundos para HH:MM:SS ou MM:SS
+ * Formata duração em segundos para MM:SS ou HH:MM:SS
  */
 export function formatDuration(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -190,9 +282,6 @@ export function formatDuration(seconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
-/**
- * Formata data/hora para padrão brasileiro DD/MM/AAAA HH:MM:SS
- */
 export function formatDateTime(timestamp: number): string {
   if (!timestamp) return '-';
   const d = new Date(timestamp);
