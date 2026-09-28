@@ -37,7 +37,7 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.25,
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck'],
+    targetClasses: ['truck', 'bus', 'car'],
   },
   {
     id: 'box-2',
@@ -57,16 +57,16 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.25,
     entryDebounceFrames: 3,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck'],
+    targetClasses: ['truck', 'bus', 'car'],
   }
 ];
 
 const DEFAULT_SETTINGS: DockSettings = {
-  confidenceThreshold: 0.40,
-  inferenceIntervalMs: 350,
+  confidenceThreshold: 0.38,
+  inferenceIntervalMs: 400,
   allowTruck: true,
   allowBus: true,
-  allowCar: false,
+  allowCar: true, // Caminhões frequentemente classificados como car pelo modelo MobileNet
   soundAlerts: true,
   autoSaveSnapshots: false,
   targetStayMinutes: 25,
@@ -171,13 +171,30 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window === 'undefined') return;
     try {
       const savedBoxes = localStorage.getItem(STORAGE_KEY_BOXES);
-      if (savedBoxes) setBoxes(JSON.parse(savedBoxes));
+      if (savedBoxes) {
+        const parsed = JSON.parse(savedBoxes);
+        // Garante que todos os boxes tenham as classes corretas de veículos
+        const updated = parsed.map((b: any) => ({
+          ...b,
+          targetClasses: ['truck', 'bus', 'car'],
+        }));
+        setBoxes(updated);
+      }
 
       const savedRecords = localStorage.getItem(STORAGE_KEY_RECORDS);
       if (savedRecords) setRecords(JSON.parse(savedRecords));
 
       const savedSettings = localStorage.getItem(STORAGE_KEY_SETTINGS);
-      if (savedSettings) setSettings(prev => ({ ...prev, ...JSON.parse(savedSettings) }));
+      if (savedSettings) {
+        const parsedStg = JSON.parse(savedSettings);
+        setSettings(prev => ({
+          ...prev,
+          ...parsedStg,
+          allowCar: true, // Força true para não descartar caminhões detectados como car
+          allowTruck: true,
+          allowBus: true,
+        }));
+      }
 
       const savedCameras = localStorage.getItem(STORAGE_KEY_CAMERAS);
       if (savedCameras) setCameras(JSON.parse(savedCameras));

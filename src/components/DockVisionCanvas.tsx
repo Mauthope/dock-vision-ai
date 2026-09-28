@@ -300,11 +300,21 @@ export const DockVisionCanvas: React.FC = () => {
   };
   const onTouchEnd = () => handlePointerUp();
 
-  // --- ÚNICO LOOP DE RENDERIZAÇÃO NO CANVAS (60 FPS SUAVES) ---
+  // --- ÚNICO LOOP DE RENDERIZAÇÃO NO CANVAS (OTIMIZADO PARA MOBILE) ---
   useEffect(() => {
     let animId: number;
+    let lastRenderTime = 0;
+    const isMobileDevice = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    const minFrameInterval = isMobileDevice ? 33 : 16; // 30 FPS no mobile evita aquecimento e lag; 60 FPS no desktop
 
-    const renderLoop = () => {
+    const renderLoop = (time: number) => {
+      // Throttling de FPS para economia de GPU no celular
+      if (time - lastRenderTime < minFrameInterval) {
+        animId = requestAnimationFrame(renderLoop);
+        return;
+      }
+      lastRenderTime = time;
+
       const canvas = canvasRef.current;
       const video = videoRef.current;
       if (!canvas) return;
@@ -516,8 +526,8 @@ export const DockVisionCanvas: React.FC = () => {
         ctx.arc(gPt.x, gPt.y, 7, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Badge de identificação
-        const label = `${det.class.toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
+        // Badge de identificação padronizado para Docas
+        const label = `CAMINHÃO ${(det.score * 100).toFixed(0)}%`;
         ctx.font = 'bold 11px monospace';
         const labelW = ctx.measureText(label).width + 14;
 
