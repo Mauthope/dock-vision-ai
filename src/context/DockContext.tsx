@@ -184,9 +184,11 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed = JSON.parse(savedBoxes);
         // Garante que todos os boxes tenham critérios modernos compatíveis com câmeras próximas e sensibilidade de movimento
         const updated = parsed.map((b: any) => {
-          let classes = b.targetClasses && b.targetClasses.length > 0 ? b.targetClasses : ['truck', 'bus', 'person'];
-          // Se o boxe tinha apenas a configuração antiga ['truck', 'bus'], adiciona 'person' para que funcione de imediato
-          if (!classes.includes('person') && classes.includes('truck') && classes.includes('bus') && classes.length === 2) {
+          let classes = Array.isArray(b.targetClasses) && b.targetClasses.length > 0
+            ? b.targetClasses
+            : ['truck', 'bus', 'person'];
+          // Garante que 'person' está incluído para funcionamento imediato
+          if (!classes.includes('person')) {
             classes = [...classes, 'person'];
           }
           return {
@@ -215,8 +217,8 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
           allowCar: true, // Força true para não descartar caminhões detectados como car
           allowTruck: true,
           allowBus: true,
-          allowPerson: parsedStg.allowPerson ?? true,
-          allowMotion: parsedStg.allowMotion ?? true,
+          allowPerson: true,
+          allowMotion: true,
         }));
       }
 
@@ -341,12 +343,8 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const allowedDetections = detections.filter(d => {
       const cls = d.class.toLowerCase();
-      if (cls === 'truck' && settings.allowTruck) return true;
-      if (cls === 'bus' && settings.allowBus) return true;
-      if (cls === 'car' && settings.allowCar) return true;
-      if (cls === 'person' && settings.allowPerson) return true;
-      if (cls === 'motion' && settings.allowMotion) return true;
-      return false;
+      // O filtro de classes é gerenciado individualmente por cada boxe em box.targetClasses
+      return ['truck', 'bus', 'car', 'person', 'motion'].includes(cls);
     });
 
     const nextBoxes = currentBoxes.map(box => {
