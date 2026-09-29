@@ -159,7 +159,7 @@ function DeviceTerminalContent() {
 
       {/* Rodapé Informativo */}
       <div className="text-center text-xs text-slate-500 border-t border-slate-900 pt-3">
-        <span>TruckVision AI Terminal • Criado por Mauricio Grigol</span>
+        <span>VisionAi Terminal • Criado por Mauricio Grigol</span>
       </div>
 
     </div>

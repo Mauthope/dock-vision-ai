@@ -17,7 +17,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'TruckVision - Sistema Inteligente de Docas & Cronoanálise',
+  title: 'VisionAi - Sistema Inteligente de Docas & Cronoanálise',
   description: 'Sistema web de visão computacional em tempo real para monitoramento de pátio, cronoanálise de permanência em boxes e gestão logística. Desenvolvido por Mauricio Grigol.',
   authors: [{ name: 'Mauricio Grigol' }],
 };

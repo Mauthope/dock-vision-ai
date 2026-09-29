@@ -69,10 +69,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenIPModal, onOpenDeviceModal
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
                   <span className="font-extrabold tracking-tight text-lg sm:text-xl text-white">
-                    Truck<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400">Vision</span>
+                    Vision<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400">Ai</span>
                   </span>
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60 uppercase">
-                    AI Dock
+                    Dock
                   </span>
                 </div>
                 <span className="text-[10px] sm:text-[11px] text-slate-400 hidden lg:inline leading-none font-medium">

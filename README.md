@@ -1,4 +1,4 @@
-# TruckVision AI 🚚⏱️ (Sistema Inteligente de Docas & Cronoanálise)
+# VisionAi 🚚⏱️ (Sistema Inteligente de Docas & Cronoanálise)
 
 Sistema Web responsivo de alta performance desenvolvido em **Next.js**, combinando o design moderno em **Dark Slate & Glassmorphism** (inspirado no projeto `Bahia`) com o poder do motor de **Visão Computacional em Tempo Real** (inspirado no projeto `Toten`).
 
@@ -9,7 +9,7 @@ Sistema Web responsivo de alta performance desenvolvido em **Next.js**, combinan
 ## ✨ Destaques & Principais Funcionalidades
 
 ### 1. 🎯 Detecção 100% Precisa Estritamente Dentro dos Boxes Desenhados
-A maior dificuldade histórica em sistemas de monitoramento por visão computacional é evitar disparos falsos causados por veículos apenas passando ao lado da vaga ou falsos encerramentos por oclusões temporárias. O **TruckVision AI** resolve isso combinando 4 camadas matemáticas:
+A maior dificuldade histórica em sistemas de monitoramento por visão computacional é evitar disparos falsos causados por veículos apenas passando ao lado da vaga ou falsos encerramentos por oclusões temporárias. O **VisionAi** resolve isso combinando 4 camadas matemáticas:
 
 1. **Coordenadas Normalizadas (0.0 a 1.0)**:
    * O usuário pode desenhar retângulos ou polígonos de 4 pontos em qualquer resolução ou tamanho de tela.
