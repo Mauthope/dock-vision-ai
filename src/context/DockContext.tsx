@@ -362,7 +362,9 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      const debounceThreshold = box.entryDebounceFrames || 3;
+      // Para detecção de movimento, o disparo é instantâneo (1 frame = dispara na hora!)
+      const isMotion = foundInside?.class === 'motion';
+      const debounceThreshold = isMotion ? 1 : (box.entryDebounceFrames || 2);
       const exitGraceMs = (box.exitGraceSeconds || 3.5) * 1000;
 
       if (foundInside) {
@@ -379,7 +381,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (box.status === 'empty') {
           if (counters.consecutiveDetections >= debounceThreshold) {
-            // CONFIRMADO: Vazio -> Ocupado
+            // CONFIRMADO: Vazio -> Ocupado (Na hora para movimento!)
             stateChanged = true;
             if (settings.soundAlerts) playEntryTone();
             return {

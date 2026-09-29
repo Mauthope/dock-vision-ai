@@ -29,7 +29,8 @@ import {
   HelpCircle,
   Truck,
   Layers,
-  ChevronDown
+  ChevronDown,
+  Zap
 } from 'lucide-react';
 
 export const DockVisionCanvas: React.FC = () => {
@@ -981,6 +982,66 @@ export const DockVisionCanvas: React.FC = () => {
                     </label>
                   );
                 })}
+
+                {/* Parâmetros Específicos para Detecção de Movimento */}
+                {(selectedBox.targetClasses || []).includes('motion') && (
+                  <div className="mt-1 pt-2 border-t border-slate-800 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-amber-300 font-semibold flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-amber-400" />
+                        Disparo por Movimento:
+                      </span>
+                      <span className="text-[9px] font-mono text-amber-400 font-bold">
+                        {(selectedBox.motionThreshold ?? 0.01) <= 0.005
+                          ? '⚡ Instantâneo (0.5%)'
+                          : (selectedBox.motionThreshold ?? 0.01) <= 0.015
+                          ? '⚡ Alta (1% - Padrão)'
+                          : '⚡ Média (2.5%)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.005 })}
+                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
+                          (selectedBox.motionThreshold ?? 0.01) <= 0.005
+                            ? 'bg-amber-950 text-amber-300 border-amber-600'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                        title="Dispara ao menor sinal de movimento (0.5% da vaga)"
+                      >
+                        Instantâneo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.01 })}
+                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
+                          (selectedBox.motionThreshold ?? 0.01) > 0.005 && (selectedBox.motionThreshold ?? 0.01) <= 0.015
+                            ? 'bg-amber-950 text-amber-300 border-amber-600'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                        title="Disparo ágil com tolerância a ruídos leves (1% da vaga)"
+                      >
+                        Alta (Padrão)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.025 })}
+                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
+                          (selectedBox.motionThreshold ?? 0.01) > 0.015
+                            ? 'bg-amber-950 text-amber-300 border-amber-600'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                        }`}
+                        title="Dispara apenas com movimentação ampla (2.5% da vaga)"
+                      >
+                        Média
+                      </button>
+                    </div>
+                    <span className="text-[9px] text-slate-400 leading-tight">
+                      Dispara o cronômetro no exato milissegundo em que ocorrer alteração visual na vaga.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

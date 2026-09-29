@@ -36,6 +36,7 @@ export interface DockBox {
   entryDebounceFrames: number; // frames consecutivos necessários para confirmar entrada (default 3)
   exitGraceSeconds: number; // segundos de tolerância de ausência antes de considerar saída (default 3.0)
   targetClasses: string[]; // ['truck', 'bus', 'car', 'person', 'motion']
+  motionThreshold?: number; // Limiar de sensibilidade de movimento (0.005 a 0.05, default: 0.01)
   // Contadores internos de histerese:
   consecutiveDetections?: number;
   consecutiveAbsences?: number;

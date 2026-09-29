@@ -356,7 +356,7 @@ export function useTruckDetection({
                             totalInside++;
                             const pIdx = py * 160 + px;
                             const diff = Math.abs(gray[pIdx] - prevGray[pIdx]);
-                            if (diff > 22) { // Limiar de movimento
+                            if (diff > 14) { // Limiar flexível de movimento (detecta até pequenos gestos e alterações sutis)
                               changedPixels++;
                             }
                           }
@@ -365,8 +365,9 @@ export function useTruckDetection({
 
                       if (totalInside > 0) {
                         const motionIntensity = changedPixels / totalInside;
-                        // Se pelo menos 3% dos pixels da área demarcada mudaram
-                        if (motionIntensity >= 0.03) {
+                        const boxThreshold = box.motionThreshold ?? 0.01; // 1% padrão (ultra flexível)
+                        // Dispara imediatamente se atingir o limiar ou se 4 amostras detectarem alteração
+                        if (motionIntensity >= boxThreshold || (changedPixels >= 4 && motionIntensity >= 0.005)) {
                           const boxCenterX = (minX + maxX) / 2;
                           const boxCenterY = (minY + maxY) / 2;
                           vehicleDetections.push({
@@ -374,7 +375,7 @@ export function useTruckDetection({
                             normalizedBbox: [minX, minY, maxX - minX, maxY - minY],
                             class: 'motion',
                             label: 'Movimento',
-                            score: Math.min(0.99, Math.max(0.40, motionIntensity * 8)),
+                            score: Math.min(0.99, Math.max(0.45, motionIntensity * 12)),
                             centroid: { x: boxCenterX, y: boxCenterY },
                             groundContact: { x: boxCenterX, y: boxCenterY },
                           });
