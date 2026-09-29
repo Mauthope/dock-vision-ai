@@ -289,15 +289,30 @@ export function isTruckInsideDockBox(
   }
 
   // 2. TRATAMENTO ESPECÍFICO PARA PESSOAS / PEDESTRES
-  // Pessoas ocupam pequena porcentagem da doca. Seus pés (ground) ou corpo (centroide) dentro do boxe confirmam presença!
+  // Pessoas ocupam pequena área em relação a uma vaga de doca.
+  // Testamos múltiplos pontos de referência anatômicos (pés no solo, centroide, cabeça/ombros, cintura) ou sobreposição >= 10%.
   if (detection.class === 'person') {
-    const isPersonInside = isGroundInside || isCentroidInside || truckOverlap >= 0.25;
+    const headPoint = { x: centroid.x, y: Math.max(0, by + bh * 0.15) };
+    const waistPoint = { x: centroid.x, y: by + bh * 0.60 };
+    const feetPoint = groundContact;
+
+    const isHeadInside = isPointInPolygon(headPoint, points);
+    const isWaistInside = isPointInPolygon(waistPoint, points);
+    const isFeetInside = isPointInPolygon(feetPoint, points);
+    const isCentroidIn = isPointInPolygon(centroid, points);
+
+    // Se qualquer ponto anatômico ou pelo menos 10% da caixa da pessoa estiver dentro do boxe
+    const isPersonInside = isFeetInside || isCentroidIn || isHeadInside || isWaistInside || truckOverlap >= 0.10;
+
+    // Garante que 'overlap' seja positivo e substancial (> 0) para vencer comparações no DockContext
+    const effectiveOverlap = isPersonInside ? Math.max(0.60, truckOverlap, detection.score) : 0;
+
     return {
       isInside: isPersonInside,
-      overlap: Math.max(truckOverlap, dockCoverage),
+      overlap: effectiveOverlap,
       dockCoverage,
       reason: isPersonInside
-        ? 'Pessoa identificada dentro da vaga'
+        ? `Pessoa identificada dentro da vaga (${(Math.max(truckOverlap, 0.10) * 100).toFixed(0)}% sobreposição)`
         : 'Pessoa fora da vaga'
     };
   }

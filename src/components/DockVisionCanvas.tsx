@@ -179,7 +179,7 @@ export const DockVisionCanvas: React.FC = () => {
       overlapThreshold: 0.20,
       entryDebounceFrames: 2,
       exitGraceSeconds: 3.5,
-      targetClasses: ['truck', 'bus'],
+      targetClasses: ['truck', 'bus', 'person'],
     });
 
     setDrawingMode(false);
@@ -988,7 +988,7 @@ export const DockVisionCanvas: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">O que detectar nesta doca:</span>
                 <span className="text-[9px] text-cyan-400 font-mono">
-                  {(selectedBox.targetClasses || ['truck', 'bus']).length} selecionado(s)
+                  {(selectedBox.targetClasses || ['truck', 'bus', 'person']).length} selecionado(s)
                 </span>
               </div>
 
@@ -1000,7 +1000,7 @@ export const DockVisionCanvas: React.FC = () => {
                   { id: 'person', label: 'Pessoa / Pedestre', icon: '👤', desc: 'Conferentes, motoristas ou pedestres' },
                   { id: 'motion', label: 'Qualquer Movimento', icon: '⚡', desc: 'Portas abrindo, empilhadeiras, pallets, etc.' },
                 ].map(item => {
-                  const current = selectedBox.targetClasses || ['truck', 'bus'];
+                  const current = selectedBox.targetClasses || ['truck', 'bus', 'person'];
                   const isChecked = current.includes(item.id);
 
                   return (

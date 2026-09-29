@@ -254,7 +254,9 @@ export function useTruckDetection({
 
           if (vWidth > 0 && vHeight > 0) {
             // Executa predição DIRETO no elemento de vídeo via WebGL (zero distorção de aspecto!)
-            const predictions = await model.detect(video, 10, confidenceThreshold);
+            // Limiar adaptativo: 0.28 para pessoas e 20 boxes máximos para não descartar pedestres
+            const minDetectScore = Math.min(confidenceThreshold, 0.28);
+            const predictions = await model.detect(video, 20, minDetectScore);
 
             const vehicleDetections: TruckDetection[] = [];
 
@@ -264,6 +266,9 @@ export function useTruckDetection({
 
               // FILTRO PRECISO DE CLASSES (Caminhão, Ônibus/Van, Carro, Pessoa/Pedestre)
               if (cls === 'truck' || cls === 'bus' || cls === 'car' || cls === 'person') {
+                const requiredScore = cls === 'person' ? Math.min(confidenceThreshold, 0.28) : confidenceThreshold;
+                if (p.score < requiredScore) continue;
+
                 const [rx, ry, rw, rh] = p.bbox;
 
                 // Coordenadas normalizadas matematicamente exatas em relação ao vídeo real

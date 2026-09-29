@@ -37,7 +37,7 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.20,
     entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck', 'bus'],
+    targetClasses: ['truck', 'bus', 'person'],
     motionThreshold: 0.03,
     motionDiffThreshold: 24,
     motionDebounceFrames: 2,
@@ -60,7 +60,7 @@ const DEFAULT_BOXES: DockBox[] = [
     overlapThreshold: 0.20,
     entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
-    targetClasses: ['truck', 'bus'],
+    targetClasses: ['truck', 'bus', 'person'],
     motionThreshold: 0.03,
     motionDiffThreshold: 24,
     motionDebounceFrames: 2,
@@ -183,16 +183,23 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (savedBoxes) {
         const parsed = JSON.parse(savedBoxes);
         // Garante que todos os boxes tenham critérios modernos compatíveis com câmeras próximas e sensibilidade de movimento
-        const updated = parsed.map((b: any) => ({
-          ...b,
-          detectionCriteria: (!b.detectionCriteria || b.detectionCriteria === 'ground') ? 'auto' : b.detectionCriteria,
-          overlapThreshold: b.overlapThreshold !== undefined ? Math.min(b.overlapThreshold, 0.25) : 0.20,
-          entryDebounceFrames: b.entryDebounceFrames ?? 2,
-          targetClasses: b.targetClasses && b.targetClasses.length > 0 ? b.targetClasses : ['truck', 'bus'],
-          motionThreshold: b.motionThreshold ?? 0.03,
-          motionDiffThreshold: b.motionDiffThreshold ?? 24,
-          motionDebounceFrames: b.motionDebounceFrames ?? 2,
-        }));
+        const updated = parsed.map((b: any) => {
+          let classes = b.targetClasses && b.targetClasses.length > 0 ? b.targetClasses : ['truck', 'bus', 'person'];
+          // Se o boxe tinha apenas a configuração antiga ['truck', 'bus'], adiciona 'person' para que funcione de imediato
+          if (!classes.includes('person') && classes.includes('truck') && classes.includes('bus') && classes.length === 2) {
+            classes = [...classes, 'person'];
+          }
+          return {
+            ...b,
+            detectionCriteria: (!b.detectionCriteria || b.detectionCriteria === 'ground') ? 'auto' : b.detectionCriteria,
+            overlapThreshold: b.overlapThreshold !== undefined ? Math.min(b.overlapThreshold, 0.25) : 0.20,
+            entryDebounceFrames: b.entryDebounceFrames ?? 2,
+            targetClasses: classes,
+            motionThreshold: b.motionThreshold ?? 0.03,
+            motionDiffThreshold: b.motionDiffThreshold ?? 24,
+            motionDebounceFrames: b.motionDebounceFrames ?? 2,
+          };
+        });
         setBoxes(updated);
       }
 
@@ -357,7 +364,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Avalia se há veículo/pessoa/movimento permitido para este boxe dentro dele
       let foundInside: TruckDetection | null = null;
       let bestOverlap = 0;
-      const boxAllowed = box.targetClasses || ['truck', 'bus'];
+      const boxAllowed = box.targetClasses || ['truck', 'bus', 'person'];
 
       for (let i = 0; i < allowedDetections.length; i++) {
         const det = allowedDetections[i];
@@ -365,15 +372,20 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!boxAllowed.includes(det.class)) continue;
 
         const evalRes = isTruckInsideDockBox(det, box);
-        if (evalRes.isInside && evalRes.overlap > bestOverlap) {
+        if (evalRes.isInside && (!foundInside || evalRes.overlap > bestOverlap)) {
           bestOverlap = evalRes.overlap;
           foundInside = det;
         }
       }
 
-      // Para detecção de movimento, o disparo usa debounce configurável (1 frame = instantâneo, 2 frames = confirmado anti-ruído)
+      // Para detecção de movimento ou pessoa, o disparo é ágil
       const isMotion = foundInside?.class === 'motion';
-      const debounceThreshold = isMotion ? (box.motionDebounceFrames ?? 2) : (box.entryDebounceFrames || 2);
+      const isPerson = foundInside?.class === 'person';
+      const debounceThreshold = isMotion
+        ? (box.motionDebounceFrames ?? 2)
+        : isPerson
+        ? 1 // Disparo ágil de 1 frame para pedestres/conferentes
+        : (box.entryDebounceFrames || 2);
       const exitGraceMs = (box.exitGraceSeconds || 3.5) * 1000;
 
       if (foundInside) {
