@@ -89,36 +89,37 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenIPModal, onOpenDeviceModal
             </div>
           </div>
 
-          {/* Navegação Desktop */}
-          <nav className="hidden md:flex items-center gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-slate-800/80">
+          {/* Navegação Desktop & Tablet */}
+          <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800/80">
             {navLinks.map(item => {
               const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 lg:px-3.5 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     isActive
                       ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/10 text-cyan-300 border border-cyan-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                   }`}
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span className="hidden lg:inline">{item.label}</span>
+                  <span className="inline lg:hidden">{item.shortLabel}</span>
                 </Link>
               );
             })}
           </nav>
 
           {/* Badges de Status & Controles Rápidos */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
             
             {/* Ocupação das Docas */}
-            <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono">
+            <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono">
               <span className={`w-2 h-2 rounded-full ${occupiedCount > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`} />
               <span className="text-slate-400 hidden sm:inline">Docas:</span>
               <span className="text-white font-bold">{occupiedCount}/{boxes.length}</span>
-              <span className="text-[10px] text-slate-500">ocupadas</span>
+              <span className="text-[10px] text-slate-500 hidden xl:inline">ocupadas</span>
             </div>
 
             {/* Alternador de Áudio */}
@@ -142,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenIPModal, onOpenDeviceModal
                 title="Configurar Câmeras IP e Fontes de Vídeo"
               >
                 <Video className="w-4 h-4 text-cyan-400" />
-                <span className="hidden lg:inline">{currentCam?.name ? currentCam.name.slice(0, 18) + '...' : 'Câmeras'}</span>
+                <span className="hidden xl:inline">{currentCam?.name ? currentCam.name.slice(0, 16) + '...' : 'Câmeras'}</span>
               </button>
             )}
 
@@ -150,11 +151,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenIPModal, onOpenDeviceModal
             {onOpenDeviceModal && (
               <button
                 onClick={onOpenDeviceModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-md shadow-cyan-950/50 transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-slate-950 font-bold text-xs shadow-md shadow-cyan-950/50 transition-all active:scale-95"
                 title="Conectar smartphone como câmera ou terminal de boxe"
               >
                 <Smartphone className="w-4 h-4" />
-                <span className="hidden sm:inline">Conectar Aparelho</span>
+                <span className="hidden lg:inline">Conectar Aparelho</span>
+                <span className="hidden sm:inline lg:hidden">Aparelho</span>
               </button>
             )}
 

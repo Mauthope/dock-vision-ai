@@ -48,15 +48,15 @@ export default function HomePage() {
         <KPISummary />
 
         {/* Linha Principal: Canvas de Visão Computacional + Painel de Controle de Docas */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
           
-          {/* Coluna da Esquerda (3 Colunas): Feed de Câmera, IA e Desenho de Boxes */}
-          <div className="xl:col-span-3 flex flex-col gap-4">
+          {/* Coluna Principal: Feed de Câmera, IA e Desenho de Boxes */}
+          <div className="col-span-1 lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
             <DockVisionCanvas />
           </div>
 
-          {/* Coluna da Direita (1 Coluna): Controles Rápidos, Sensibilidade e Status dos Boxes */}
-          <div className="xl:col-span-1 flex flex-col gap-4">
+          {/* Coluna Lateral: No tablet retrato (md), as 2 caixas ficam lado a lado! No desktop/tablet paisagem (lg), ficam na lateral! */}
+          <div className="col-span-1 lg:col-span-5 xl:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
             
             {/* Card: Status em Tempo Real dos Boxes */}
             <div className="p-4 rounded-2xl glass-panel border border-slate-800 shadow-xl flex flex-col gap-3">

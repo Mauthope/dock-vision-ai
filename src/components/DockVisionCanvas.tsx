@@ -673,7 +673,7 @@ export const DockVisionCanvas: React.FC = () => {
     <div
       ref={containerRef}
       className={`relative w-full rounded-2xl overflow-hidden glass-panel border border-slate-800 shadow-2xl flex flex-col ${
-        isFullscreen ? 'h-screen w-screen rounded-none z-50 fixed inset-0' : 'min-h-[520px]'
+        isFullscreen ? 'h-screen w-screen rounded-none z-50 fixed inset-0' : 'min-h-[400px] sm:min-h-[480px] lg:min-h-[520px]'
       }`}
     >
       {/* Barra de Ferramentas Superior */}
@@ -718,20 +718,22 @@ export const DockVisionCanvas: React.FC = () => {
             <>
               <button
                 onClick={() => startDrawing('rectangle')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/60 text-cyan-300 text-xs font-bold transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/60 text-cyan-300 text-xs font-bold transition-all shadow-sm"
                 title="Desenhar Boxe Retangular (Clique e arraste sobre a vaga)"
               >
                 <Square className="w-3.5 h-3.5" />
-                <span>+ Desenhar Retângulo</span>
+                <span className="hidden sm:inline">+ Desenhar Retângulo</span>
+                <span className="inline sm:hidden">+ Retângulo</span>
               </button>
 
               <button
                 onClick={() => startDrawing('polygon')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 text-slate-300 hover:text-teal-300 text-xs font-medium transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-teal-500/50 text-slate-300 hover:text-teal-300 text-xs font-medium transition-all shadow-sm"
                 title="Desenhar Boxe em Perspectiva (Clique nos 4 cantos da vaga)"
               >
                 <Shapes className="w-3.5 h-3.5 text-teal-400" />
-                <span>+ Perspectiva (4 Cantos)</span>
+                <span className="hidden sm:inline">+ Perspectiva (4 Cantos)</span>
+                <span className="inline sm:hidden">+ Perspectiva</span>
               </button>
 
               <button
@@ -812,7 +814,7 @@ export const DockVisionCanvas: React.FC = () => {
       )}
 
       {/* Área do Vídeo e Canvas Interativo */}
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[460px] select-none">
+      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[340px] sm:min-h-[420px] lg:min-h-[460px] select-none">
         
         {/* Vídeo HTML5 (Alimenta a IA e o Canvas) */}
         <video
@@ -837,7 +839,13 @@ export const DockVisionCanvas: React.FC = () => {
 
         {/* PAINEL FLUTUANTE DE EDIÇÃO DO BOXE SELECIONADO */}
         {selectedBox && !drawingMode && (
-          <div className="absolute top-4 left-4 z-20 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl backdrop-blur-xl flex flex-col gap-2.5 w-80 max-w-[calc(100%-1.5rem)] max-h-[calc(100%-2rem)] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+          <div
+            onMouseDown={e => e.stopPropagation()}
+            onTouchStart={e => e.stopPropagation()}
+            onTouchMove={e => e.stopPropagation()}
+            onTouchEnd={e => e.stopPropagation()}
+            className="absolute top-2 sm:top-4 left-2 sm:left-4 z-20 p-3 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl backdrop-blur-xl flex flex-col gap-2.5 w-80 sm:w-84 md:w-92 max-w-[calc(100%-1rem)] max-h-[calc(100%-1rem)] overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150"
+          >
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedBox.color }} />
