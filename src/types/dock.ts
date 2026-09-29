@@ -36,7 +36,9 @@ export interface DockBox {
   entryDebounceFrames: number; // frames consecutivos necessários para confirmar entrada (default 3)
   exitGraceSeconds: number; // segundos de tolerância de ausência antes de considerar saída (default 3.0)
   targetClasses: string[]; // ['truck', 'bus', 'car', 'person', 'motion']
-  motionThreshold?: number; // Limiar de sensibilidade de movimento (0.005 a 0.05, default: 0.01)
+  motionThreshold?: number; // Limiar de sensibilidade de área de movimento (0.01 a 0.15, default: 0.03 = 3%)
+  motionDiffThreshold?: number; // Contraste mínimo de pixel para ruído de luz (15 a 50, default: 24)
+  motionDebounceFrames?: number; // Frames consecutivos para confirmar disparo de movimento (1, 2 ou 3, default: 2)
   // Contadores internos de histerese:
   consecutiveDetections?: number;
   consecutiveAbsences?: number;
@@ -52,6 +54,7 @@ export interface TruckDetection {
   score: number;
   centroid: Point2D;
   groundContact: Point2D; // Ponto das rodas ou pés tocando o solo
+  motionIntensity?: number; // Percentual da vaga com movimento medido (0 a 1.0)
 }
 
 export interface TruckRecord {

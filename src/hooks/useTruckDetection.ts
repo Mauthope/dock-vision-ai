@@ -46,6 +46,7 @@ export function useTruckDetection({
   boxesRef.current = boxes;
   const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const prevFrameDataRef = useRef<Uint8Array | null>(null);
+  const liveMotionMapRef = useRef<Record<string, number>>({});
 
   // Carregar Modelo TensorFlow.js COCO-SSD com aceleração WebGL
   useEffect(() => {
@@ -209,6 +210,8 @@ export function useTruckDetection({
   }, [activeCamera, selectedDeviceId, stopCamera, refreshDevices]);
 
   useEffect(() => {
+    prevFrameDataRef.current = null;
+    liveMotionMapRef.current = {};
     startCamera();
     return () => {
       stopCamera();
@@ -344,6 +347,7 @@ export function useTruckDetection({
 
                       let totalInside = 0;
                       let changedPixels = 0;
+                      const diffThresh = box.motionDiffThreshold ?? 24; // Padrão 24 (filtra ruído e granulação do sensor da câmera)
 
                       for (let py = startPxY; py < endPxY; py += 2) {
                         if (py < 0 || py >= 90) continue;
@@ -356,7 +360,7 @@ export function useTruckDetection({
                             totalInside++;
                             const pIdx = py * 160 + px;
                             const diff = Math.abs(gray[pIdx] - prevGray[pIdx]);
-                            if (diff > 14) { // Limiar flexível de movimento (detecta até pequenos gestos e alterações sutis)
+                            if (diff > diffThresh) {
                               changedPixels++;
                             }
                           }
@@ -365,9 +369,11 @@ export function useTruckDetection({
 
                       if (totalInside > 0) {
                         const motionIntensity = changedPixels / totalInside;
-                        const boxThreshold = box.motionThreshold ?? 0.01; // 1% padrão (ultra flexível)
-                        // Dispara imediatamente se atingir o limiar ou se 4 amostras detectarem alteração
-                        if (motionIntensity >= boxThreshold || (changedPixels >= 4 && motionIntensity >= 0.005)) {
+                        liveMotionMapRef.current[box.id] = motionIntensity;
+                        const boxThreshold = box.motionThreshold ?? 0.03; // 3% padrão equilibrado
+
+                        // Dispara apenas quando o percentual de movimento na vaga cruzar o limiar calibrado
+                        if (motionIntensity >= boxThreshold) {
                           const boxCenterX = (minX + maxX) / 2;
                           const boxCenterY = (minY + maxY) / 2;
                           vehicleDetections.push({
@@ -375,9 +381,10 @@ export function useTruckDetection({
                             normalizedBbox: [minX, minY, maxX - minX, maxY - minY],
                             class: 'motion',
                             label: 'Movimento',
-                            score: Math.min(0.99, Math.max(0.45, motionIntensity * 12)),
+                            score: Math.min(0.99, Math.max(0.50, motionIntensity * 8)),
                             centroid: { x: boxCenterX, y: boxCenterY },
                             groundContact: { x: boxCenterX, y: boxCenterY },
+                            motionIntensity,
                           });
                         }
                       }
@@ -425,6 +432,7 @@ export function useTruckDetection({
     setSelectedDeviceId,
     fps,
     detectionsRef,
+    liveMotionMapRef,
     startCamera,
     stopCamera,
     refreshDevices,

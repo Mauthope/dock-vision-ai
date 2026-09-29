@@ -38,6 +38,9 @@ const DEFAULT_BOXES: DockBox[] = [
     entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck', 'bus'],
+    motionThreshold: 0.03,
+    motionDiffThreshold: 24,
+    motionDebounceFrames: 2,
   },
   {
     id: 'box-2',
@@ -58,6 +61,9 @@ const DEFAULT_BOXES: DockBox[] = [
     entryDebounceFrames: 2,
     exitGraceSeconds: 3.5,
     targetClasses: ['truck', 'bus'],
+    motionThreshold: 0.03,
+    motionDiffThreshold: 24,
+    motionDebounceFrames: 2,
   }
 ];
 
@@ -176,13 +182,16 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const savedBoxes = localStorage.getItem(STORAGE_KEY_BOXES);
       if (savedBoxes) {
         const parsed = JSON.parse(savedBoxes);
-        // Garante que todos os boxes tenham critérios modernos compatíveis com câmeras próximas
+        // Garante que todos os boxes tenham critérios modernos compatíveis com câmeras próximas e sensibilidade de movimento
         const updated = parsed.map((b: any) => ({
           ...b,
           detectionCriteria: (!b.detectionCriteria || b.detectionCriteria === 'ground') ? 'auto' : b.detectionCriteria,
           overlapThreshold: b.overlapThreshold !== undefined ? Math.min(b.overlapThreshold, 0.25) : 0.20,
           entryDebounceFrames: b.entryDebounceFrames ?? 2,
           targetClasses: b.targetClasses && b.targetClasses.length > 0 ? b.targetClasses : ['truck', 'bus'],
+          motionThreshold: b.motionThreshold ?? 0.03,
+          motionDiffThreshold: b.motionDiffThreshold ?? 24,
+          motionDebounceFrames: b.motionDebounceFrames ?? 2,
         }));
         setBoxes(updated);
       }
@@ -362,9 +371,9 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // Para detecção de movimento, o disparo é instantâneo (1 frame = dispara na hora!)
+      // Para detecção de movimento, o disparo usa debounce configurável (1 frame = instantâneo, 2 frames = confirmado anti-ruído)
       const isMotion = foundInside?.class === 'motion';
-      const debounceThreshold = isMotion ? 1 : (box.entryDebounceFrames || 2);
+      const debounceThreshold = isMotion ? (box.motionDebounceFrames ?? 2) : (box.entryDebounceFrames || 2);
       const exitGraceMs = (box.exitGraceSeconds || 3.5) * 1000;
 
       if (foundInside) {

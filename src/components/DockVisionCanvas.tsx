@@ -30,7 +30,10 @@ import {
   Truck,
   Layers,
   ChevronDown,
-  Zap
+  Zap,
+  Shield,
+  Gauge,
+  Activity
 } from 'lucide-react';
 
 export const DockVisionCanvas: React.FC = () => {
@@ -95,7 +98,8 @@ export const DockVisionCanvas: React.FC = () => {
     cameraError,
     startCamera,
     fps,
-    detectionsRef
+    detectionsRef,
+    liveMotionMapRef
   } = useTruckDetection({
     activeCamera,
     confidenceThreshold: settings.confidenceThreshold,
@@ -105,6 +109,18 @@ export const DockVisionCanvas: React.FC = () => {
   });
 
   const selectedBox = boxes.find(b => b.id === selectedBoxId);
+
+  // Monitor em tempo real da intensidade de movimento para o painel de edição
+  const [panelMotionLevel, setPanelMotionLevel] = useState<number>(0);
+
+  useEffect(() => {
+    if (!selectedBox || !selectedBox.targetClasses?.includes('motion')) return;
+    const interval = setInterval(() => {
+      const val = liveMotionMapRef.current?.[selectedBox.id] || 0;
+      setPanelMotionLevel(val);
+    }, 150);
+    return () => clearInterval(interval);
+  }, [selectedBox?.id, selectedBox?.targetClasses, liveMotionMapRef]);
 
   // Alternar tela cheia
   const toggleFullscreen = () => {
@@ -448,6 +464,41 @@ export const DockVisionCanvas: React.FC = () => {
 
         ctx.fillStyle = '#f8fafc';
         ctx.fillText(labelText, firstPt.x + 18, Math.max(16, firstPt.y - 24) + 15);
+
+        // Indicador em tempo real de movimento para boxes configurados com 'motion'
+        if (box.targetClasses?.includes('motion')) {
+          const curMotion = liveMotionMapRef.current?.[box.id] || 0;
+          const thresh = box.motionThreshold ?? 0.03;
+          const isTriggered = curMotion >= thresh;
+          const meterW = Math.max(124, textWidth + 24);
+          const meterH = 15;
+          const meterY = Math.max(16, firstPt.y - 24) + 26;
+
+          // Fundo do medidor
+          ctx.fillStyle = 'rgba(8, 13, 26, 0.92)';
+          ctx.beginPath();
+          ctx.roundRect(firstPt.x, meterY, meterW, meterH, 4);
+          ctx.fill();
+
+          ctx.strokeStyle = isTriggered ? '#f43f5e' : isSel ? '#eab308' : 'rgba(234, 179, 8, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          // Barra preenchida proporcional
+          const fillRatio = Math.min(1, curMotion / (thresh * 1.5));
+          const barW = Math.max(0, (meterW - 4) * fillRatio);
+          if (barW > 0) {
+            ctx.fillStyle = isTriggered ? '#f43f5e' : curMotion > thresh * 0.7 ? '#f59e0b' : '#06b6d4';
+            ctx.beginPath();
+            ctx.roundRect(firstPt.x + 2, meterY + 2, barW, meterH - 4, 2);
+            ctx.fill();
+          }
+
+          // Rótulo: ⚡ atual% / limiar%
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = isTriggered ? '#fca5a5' : '#e2e8f0';
+          ctx.fillText(`⚡ ${(curMotion * 100).toFixed(1)}% / ${(thresh * 100).toFixed(1)}%`, firstPt.x + 6, meterY + 11);
+        }
 
         // Se estiver ocupado, desenhar cronômetro gigante no centro do boxe
         if (isOcc && box.currentTruck) {
@@ -985,61 +1036,270 @@ export const DockVisionCanvas: React.FC = () => {
 
                 {/* Parâmetros Específicos para Detecção de Movimento */}
                 {(selectedBox.targetClasses || []).includes('motion') && (
-                  <div className="mt-1 pt-2 border-t border-slate-800 flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-amber-300 font-semibold flex items-center gap-1">
-                        <Zap className="w-3 h-3 text-amber-400" />
-                        Disparo por Movimento:
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/40 flex flex-col gap-2.5">
+                    {/* Cabeçalho do Bloco de Movimento */}
+                    <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5">
+                      <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        Calibração de Movimento
                       </span>
-                      <span className="text-[9px] font-mono text-amber-400 font-bold">
-                        {(selectedBox.motionThreshold ?? 0.01) <= 0.005
-                          ? '⚡ Instantâneo (0.5%)'
-                          : (selectedBox.motionThreshold ?? 0.01) <= 0.015
-                          ? '⚡ Alta (1% - Padrão)'
-                          : '⚡ Média (2.5%)'}
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300 font-bold">
+                        {(panelMotionLevel * 100).toFixed(1)}% ao vivo
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.005 })}
-                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
-                          (selectedBox.motionThreshold ?? 0.01) <= 0.005
-                            ? 'bg-amber-950 text-amber-300 border-amber-600'
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                        }`}
-                        title="Dispara ao menor sinal de movimento (0.5% da vaga)"
-                      >
-                        Instantâneo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.01 })}
-                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
-                          (selectedBox.motionThreshold ?? 0.01) > 0.005 && (selectedBox.motionThreshold ?? 0.01) <= 0.015
-                            ? 'bg-amber-950 text-amber-300 border-amber-600'
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                        }`}
-                        title="Disparo ágil com tolerância a ruídos leves (1% da vaga)"
-                      >
-                        Alta (Padrão)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateBox(selectedBox.id, { motionThreshold: 0.025 })}
-                        className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
-                          (selectedBox.motionThreshold ?? 0.01) > 0.015
-                            ? 'bg-amber-950 text-amber-300 border-amber-600'
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
-                        }`}
-                        title="Dispara apenas com movimentação ampla (2.5% da vaga)"
-                      >
-                        Média
-                      </button>
+
+                    {/* Medidor de Movimento ao Vivo com Barra Dinâmica */}
+                    <div className="flex flex-col gap-1 bg-slate-950/70 p-2 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <Activity className="w-3 h-3 text-cyan-400" />
+                          Atividade na Vaga:
+                        </span>
+                        <span className={`font-mono font-bold ${
+                          panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03)
+                            ? 'text-rose-400 animate-pulse'
+                            : panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03) * 0.7
+                            ? 'text-amber-400'
+                            : 'text-emerald-400'
+                        }`}>
+                          {panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03)
+                            ? '🔴 Disparando'
+                            : panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03) * 0.7
+                            ? '🟡 Variação Leve'
+                            : '🟢 Estável / Silencioso'}
+                        </span>
+                      </div>
+                      
+                      <div className="relative w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
+                        {/* Linha indicadora da Meta / Limiar */}
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10"
+                          style={{
+                            left: `${Math.min(100, Math.max(0, ((selectedBox.motionThreshold ?? 0.03) / 0.12) * 100))}%`
+                          }}
+                          title={`Limiar de ativação: ${((selectedBox.motionThreshold ?? 0.03) * 100).toFixed(1)}%`}
+                        />
+                        {/* Barra de Progresso do Movimento Atual */}
+                        <div
+                          className={`h-full transition-all duration-150 rounded-full ${
+                            panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03)
+                              ? 'bg-rose-500'
+                              : panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03) * 0.7
+                              ? 'bg-amber-400'
+                              : 'bg-cyan-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, Math.max(0, (panelMotionLevel / 0.12) * 100))}%`
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[8px] text-slate-500 font-mono">
+                        <span>0%</span>
+                        <span className="text-amber-400 font-semibold">
+                          Meta: {((selectedBox.motionThreshold ?? 0.03) * 100).toFixed(1)}%
+                        </span>
+                        <span>12%</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-slate-400 leading-tight">
-                      Dispara o cronômetro no exato milissegundo em que ocorrer alteração visual na vaga.
-                    </span>
+
+                    {/* Presets Rápidos */}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase">Presets Rápidos:</span>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateBox(selectedBox.id, {
+                            motionThreshold: 0.015,
+                            motionDiffThreshold: 18,
+                            motionDebounceFrames: 1
+                          })}
+                          className={`px-1.5 py-1.5 rounded text-[9px] font-bold border transition-colors flex flex-col items-center gap-0.5 ${
+                            (selectedBox.motionThreshold ?? 0.03) <= 0.018 && (selectedBox.motionDebounceFrames ?? 2) === 1
+                              ? 'bg-amber-950 text-amber-200 border-amber-500 shadow-sm'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                          title="Dispara rápido com qualquer pequeno movimento (1.5% da vaga, 1 frame)"
+                        >
+                          <span className="flex items-center gap-0.5">⚡ Alta</span>
+                          <span className="text-[8px] font-normal opacity-80">1.5% | 1 frame</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateBox(selectedBox.id, {
+                            motionThreshold: 0.030,
+                            motionDiffThreshold: 24,
+                            motionDebounceFrames: 2
+                          })}
+                          className={`px-1.5 py-1.5 rounded text-[9px] font-bold border transition-colors flex flex-col items-center gap-0.5 ${
+                            (selectedBox.motionThreshold ?? 0.03) > 0.018 && (selectedBox.motionThreshold ?? 0.03) <= 0.045
+                              ? 'bg-amber-950 text-amber-200 border-amber-500 shadow-sm'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                          title="Equilibrado para docas de carga. Filtra ruídos de sensor (3.0% da vaga, 2 frames)"
+                        >
+                          <span className="flex items-center gap-0.5">⚖️ Padrão</span>
+                          <span className="text-[8px] font-normal opacity-80">3.0% | 2 frames</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateBox(selectedBox.id, {
+                            motionThreshold: 0.060,
+                            motionDiffThreshold: 35,
+                            motionDebounceFrames: 2
+                          })}
+                          className={`px-1.5 py-1.5 rounded text-[9px] font-bold border transition-colors flex flex-col items-center gap-0.5 ${
+                            (selectedBox.motionThreshold ?? 0.03) > 0.045
+                              ? 'bg-amber-950 text-amber-200 border-amber-500 shadow-sm'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                          }`}
+                          title="Anti-ruído para áreas abertas, vento, sol e sombra (6.0% da vaga)"
+                        >
+                          <span className="flex items-center gap-0.5">🛡️ Anti-Ruído</span>
+                          <span className="text-[8px] font-normal opacity-80">6.0% | Rígido</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Parâmetro 1: Área Mínima de Movimento (% da vaga) */}
+                    <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-300 font-semibold flex items-center gap-1">
+                          <Gauge className="w-3 h-3 text-cyan-400" />
+                          Área Mínima de Movimento:
+                        </span>
+                        <span className="text-[10px] text-amber-400 font-mono font-bold">
+                          {((selectedBox.motionThreshold ?? 0.03) * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="10"
+                        max="100"
+                        step="5"
+                        value={Math.round((selectedBox.motionThreshold ?? 0.03) * 1000)}
+                        onChange={e => updateBox(selectedBox.id, { motionThreshold: Number(e.target.value) / 1000 })}
+                        className="w-full accent-amber-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                      />
+                      <span className="text-[8.5px] text-slate-400 leading-tight">
+                        Quanto da vaga desenhada precisa mudar visualmente para disparar (1% a 10%).
+                      </span>
+                    </div>
+
+                    {/* Parâmetro 2: Filtro de Luz e Ruído de Sensor (motionDiffThreshold) */}
+                    <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-300 font-semibold flex items-center gap-1">
+                          <Shield className="w-3 h-3 text-emerald-400" />
+                          Filtro de Ruído Luminoso:
+                        </span>
+                        <span className="text-[9px] text-cyan-300 font-mono font-semibold">
+                          {(selectedBox.motionDiffThreshold ?? 24) <= 20
+                            ? 'Sensível (18)'
+                            : (selectedBox.motionDiffThreshold ?? 24) <= 28
+                            ? 'Equilibrado (24)'
+                            : 'Forte (35)'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { val: 18, label: 'Sensível', desc: 'Luz fraca' },
+                          { val: 24, label: 'Normal', desc: 'Filtra sensor' },
+                          { val: 35, label: 'Forte', desc: 'Sol & trepidação' },
+                        ].map(f => {
+                          const isSelDiff = (selectedBox.motionDiffThreshold ?? 24) === f.val;
+                          return (
+                            <button
+                              key={f.val}
+                              type="button"
+                              onClick={() => updateBox(selectedBox.id, { motionDiffThreshold: f.val })}
+                              className={`px-1 py-1 rounded text-[9px] font-semibold border transition-colors ${
+                                isSelDiff
+                                  ? 'bg-emerald-950 text-emerald-300 border-emerald-500 shadow-sm'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              <div>{f.label}</div>
+                              <div className="text-[7.5px] opacity-75">{f.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Parâmetro 3: Velocidade de Confirmação (Debounce de Disparo) */}
+                    <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-300 font-semibold flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-amber-400" />
+                          Velocidade de Disparo:
+                        </span>
+                        <span className="text-[9px] text-amber-300 font-mono font-semibold">
+                          {(selectedBox.motionDebounceFrames ?? 2) === 1
+                            ? '⚡ 1 frame (Instantâneo)'
+                            : (selectedBox.motionDebounceFrames ?? 2) === 2
+                            ? '🛡️ 2 frames (Confirmado)'
+                            : '⏱️ 3 frames (Estável)'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { frames: 1, label: 'Instantâneo', desc: '1 frame (~300ms)' },
+                          { frames: 2, label: 'Confirmado', desc: '2 frames (Padrão)' },
+                          { frames: 3, label: 'Suave', desc: '3 frames (~1s)' },
+                        ].map(opt => {
+                          const isSelFrames = (selectedBox.motionDebounceFrames ?? 2) === opt.frames;
+                          return (
+                            <button
+                              key={opt.frames}
+                              type="button"
+                              onClick={() => updateBox(selectedBox.id, { motionDebounceFrames: opt.frames })}
+                              className={`px-1 py-1 rounded text-[9px] font-semibold border transition-colors ${
+                                isSelFrames
+                                  ? 'bg-amber-950 text-amber-200 border-amber-500 shadow-sm'
+                                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                              }`}
+                            >
+                              <div>{opt.label}</div>
+                              <div className="text-[7.5px] opacity-75">{opt.desc}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Parâmetro 4: Tempo de Saída / Liberação (exitGraceSeconds) */}
+                    <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-300 font-semibold">
+                          Liberação após Parada:
+                        </span>
+                        <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                          {selectedBox.exitGraceSeconds ?? 3.5}s
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[2, 3.5, 5, 8].map(sec => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => updateBox(selectedBox.id, { exitGraceSeconds: sec })}
+                            className={`px-1 py-1 rounded text-[9px] font-bold border transition-colors ${
+                              (selectedBox.exitGraceSeconds ?? 3.5) === sec
+                                ? 'bg-cyan-950 text-cyan-300 border-cyan-500 shadow-sm'
+                                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {sec}s
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[8.5px] text-slate-500 leading-tight">
+                        Tempo de silêncio para registrar fim de atendimento e liberar o boxe.
+                      </span>
+                    </div>
+
                   </div>
                 )}
               </div>
