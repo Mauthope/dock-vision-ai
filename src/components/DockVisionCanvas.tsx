@@ -27,7 +27,9 @@ import {
   Move,
   Info,
   HelpCircle,
-  Truck
+  Truck,
+  Layers,
+  ChevronDown
 } from 'lucide-react';
 
 export const DockVisionCanvas: React.FC = () => {
@@ -45,6 +47,7 @@ export const DockVisionCanvas: React.FC = () => {
     deleteBox,
     selectedBoxId,
     setSelectedBoxId,
+    selectBoxAndCamera,
     manualToggleOccupied
   } = useDock();
 
@@ -97,6 +100,7 @@ export const DockVisionCanvas: React.FC = () => {
     confidenceThreshold: settings.confidenceThreshold,
     inferenceIntervalMs: settings.inferenceIntervalMs,
     onDetections: processDetections,
+    boxes,
   });
 
   const selectedBox = boxes.find(b => b.id === selectedBoxId);
@@ -496,12 +500,22 @@ export const DockVisionCanvas: React.FC = () => {
 
         const isTruck = det.class === 'truck';
         const isBus = det.class === 'bus';
-        const themeColor = isTruck ? '#06b6d4' : isBus ? '#8b5cf6' : '#f59e0b';
+        const isPerson = det.class === 'person';
+        const isMotion = det.class === 'motion';
+        const themeColor = isTruck ? '#06b6d4' : isBus ? '#8b5cf6' : isPerson ? '#38bdf8' : isMotion ? '#eab308' : '#f59e0b';
+
+        // Preenchimento especial para movimento
+        if (isMotion) {
+          ctx.fillStyle = 'rgba(234, 179, 8, 0.14)';
+          ctx.fillRect(rx, ry, rw, rh);
+        }
 
         // Bounding Box temática
         ctx.strokeStyle = `${themeColor}99`;
         ctx.lineWidth = 1.5;
+        if (isMotion) ctx.setLineDash([6, 4]);
         ctx.strokeRect(rx, ry, rw, rh);
+        if (isMotion) ctx.setLineDash([]);
 
         const cLen = 14;
         ctx.strokeStyle = themeColor;
@@ -522,16 +536,19 @@ export const DockVisionCanvas: React.FC = () => {
         ctx.lineTo(rx, ry + rh - cLen);
         ctx.stroke();
 
-        // Ponto de solo (onde as rodas tocam a vaga)
-        const gPt = normalizedToCanvasCoord(det.groundContact, cw, ch, vw, vh);
-        ctx.strokeStyle = '#10b981';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(gPt.x, gPt.y, 7, 0, Math.PI * 2);
-        ctx.stroke();
+        // Ponto de solo (onde as rodas ou pés tocam a vaga - oculto para movimento amplo)
+        if (!isMotion) {
+          const gPt = normalizedToCanvasCoord(det.groundContact, cw, ch, vw, vh);
+          ctx.strokeStyle = isPerson ? '#38bdf8' : '#10b981';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(gPt.x, gPt.y, isPerson ? 5 : 7, 0, Math.PI * 2);
+          ctx.stroke();
+        }
 
         // Badge de identificação com classe autêntica
-        const label = `${(det.label || 'Veículo').toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
+        const prefix = isPerson ? '👤 ' : isMotion ? '⚡ ' : isTruck ? '🚚 ' : isBus ? '🚌 ' : '🚗 ';
+        const label = `${prefix}${(det.label || 'Objeto').toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
         ctx.font = 'bold 11px monospace';
         const labelW = ctx.measureText(label).width + 14;
 
@@ -540,7 +557,7 @@ export const DockVisionCanvas: React.FC = () => {
         ctx.roundRect(rx, Math.max(14, ry - 20), labelW, 18, 4);
         ctx.fill();
 
-        ctx.fillStyle = isTruck ? '#060a13' : '#ffffff';
+        ctx.fillStyle = (isTruck || isMotion) ? '#060a13' : '#ffffff';
         ctx.fillText(label, rx + 7, Math.max(14, ry - 20) + 13);
       });
 
@@ -612,9 +629,20 @@ export const DockVisionCanvas: React.FC = () => {
         
         {/* Identificação da Câmera & Status da IA */}
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-            <Video className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="font-semibold text-slate-200">{activeCamera.name}</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs shadow-inner">
+            <Video className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <select
+              value={activeCameraId}
+              onChange={e => setActiveCameraId(e.target.value)}
+              className="bg-transparent text-slate-200 font-semibold text-xs border-none focus:outline-none cursor-pointer pr-1"
+              title="Trocar Câmera Ativa"
+            >
+              {cameras.map(cam => (
+                <option key={cam.id} value={cam.id} className="bg-slate-950 text-white">
+                  {cam.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono">
@@ -688,6 +716,48 @@ export const DockVisionCanvas: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Barra de Seleção Rápida de Docas: Clicar em qualquer boxe muda para a câmera responsável */}
+      {boxes.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-slate-950/70 border-b border-slate-800/80 overflow-x-auto custom-scrollbar z-10">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 shrink-0">
+            <Layers className="w-3 h-3 text-cyan-400" />
+            Docas:
+          </span>
+          {boxes.map(b => {
+            const isCurrentCam = b.cameraId === activeCameraId;
+            const isSelected = selectedBoxId === b.id;
+            const isOcc = b.status === 'occupied';
+            const cam = cameras.find(c => c.id === b.cameraId);
+
+            return (
+              <button
+                key={b.id}
+                onClick={() => selectBoxAndCamera(b.id)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium shrink-0 border transition-all ${
+                  isSelected
+                    ? 'bg-cyan-950/80 border-cyan-400 text-white shadow-md shadow-cyan-950/50'
+                    : isOcc
+                    ? 'bg-rose-950/40 border-rose-600/50 text-rose-200 hover:border-rose-500'
+                    : isCurrentCam
+                    ? 'bg-slate-900 border-slate-700 text-slate-200 hover:border-cyan-600'
+                    : 'bg-slate-950/80 border-slate-800/90 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`}
+                title={`Clique para ir à câmera "${cam?.name || b.cameraId}" e visualizar ${b.name}`}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                <span className="font-bold">{b.name}</span>
+                <span className={`text-[9px] px-1 py-0.5 rounded font-mono ${
+                  isCurrentCam ? 'text-cyan-300 bg-cyan-950/70 border border-cyan-800/50' : 'text-slate-500 bg-slate-900'
+                }`}>
+                  {cam ? cam.name.replace(/\(.*\)/, '').trim() : b.cameraId}
+                </span>
+                {isOcc && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Área do Vídeo e Canvas Interativo */}
       <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[460px] select-none">
@@ -835,56 +905,82 @@ export const DockVisionCanvas: React.FC = () => {
               </span>
             </div>
 
-            {/* Tipos de Veículo Permitidos no Boxe */}
-            <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-800">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Acionar com:</span>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = selectedBox.targetClasses || ['truck'];
-                    const next = current.includes('truck') ? current.filter(c => c !== 'truck') : [...current, 'truck'];
-                    if (next.length > 0) updateBox(selectedBox.id, { targetClasses: next });
-                  }}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
-                    (selectedBox.targetClasses || ['truck']).includes('truck')
-                      ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
-                      : 'bg-slate-900 text-slate-500 border-slate-800'
-                  }`}
-                >
-                  🚚 Caminhão
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = selectedBox.targetClasses || ['truck'];
-                    const next = current.includes('bus') ? current.filter(c => c !== 'bus') : [...current, 'bus'];
-                    updateBox(selectedBox.id, { targetClasses: next });
-                  }}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
-                    (selectedBox.targetClasses || []).includes('bus')
-                      ? 'bg-purple-950 text-purple-300 border-purple-700'
-                      : 'bg-slate-900 text-slate-500 border-slate-800'
-                  }`}
-                >
-                  🚌 Ônibus/Van
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const current = selectedBox.targetClasses || ['truck'];
-                    const next = current.includes('car') ? current.filter(c => c !== 'car') : [...current, 'car'];
-                    updateBox(selectedBox.id, { targetClasses: next });
-                  }}
-                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${
-                    (selectedBox.targetClasses || []).includes('car')
-                      ? 'bg-amber-950 text-amber-300 border-amber-700'
-                      : 'bg-slate-900 text-slate-500 border-slate-800'
-                  }`}
-                  title="Aceitar também carros comuns nesta vaga"
-                >
-                  🚗 Carro
-                </button>
+            {/* Câmera Responsável pelo Boxe */}
+            <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-800">
+              <label className="text-[10px] text-slate-400 uppercase font-semibold flex items-center justify-between">
+                <span>Câmera Responsável:</span>
+                <span className="text-[9px] text-cyan-400 font-mono">Associação</span>
+              </label>
+              <select
+                value={selectedBox.cameraId}
+                onChange={e => {
+                  const newCamId = e.target.value;
+                  updateBox(selectedBox.id, { cameraId: newCamId });
+                  setActiveCameraId(newCamId);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 cursor-pointer"
+              >
+                {cameras.map(cam => (
+                  <option key={cam.id} value={cam.id} className="bg-slate-950 text-white">
+                    {cam.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[9px] text-slate-500">
+                Ao clicar neste boxe, o app mudará automaticamente para esta câmera.
+              </span>
+            </div>
+
+            {/* O que detectar neste Boxe (Checkboxes) */}
+            <div className="flex flex-col gap-2 pt-1.5 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400 uppercase font-semibold">O que detectar nesta doca:</span>
+                <span className="text-[9px] text-cyan-400 font-mono">
+                  {(selectedBox.targetClasses || ['truck', 'bus']).length} selecionado(s)
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-1.5 bg-slate-900/80 p-2 rounded-xl border border-slate-800/80">
+                {[
+                  { id: 'truck', label: 'Caminhão', icon: '🚚', desc: 'Carretas, baús, trucks e semirreboques' },
+                  { id: 'bus', label: 'Ônibus / Van', icon: '🚌', desc: 'Vans de carga e furgões de entrega' },
+                  { id: 'car', label: 'Carro Comum', icon: '🚗', desc: 'Veículos leves e utilitários (VUCs)' },
+                  { id: 'person', label: 'Pessoa / Pedestre', icon: '👤', desc: 'Conferentes, motoristas ou pedestres' },
+                  { id: 'motion', label: 'Qualquer Movimento', icon: '⚡', desc: 'Portas abrindo, empilhadeiras, pallets, etc.' },
+                ].map(item => {
+                  const current = selectedBox.targetClasses || ['truck', 'bus'];
+                  const isChecked = current.includes(item.id);
+
+                  return (
+                    <label
+                      key={item.id}
+                      className={`flex items-start gap-2.5 p-1.5 rounded-lg cursor-pointer transition-colors ${
+                        isChecked ? 'bg-cyan-950/40 text-slate-200 border border-cyan-800/40' : 'hover:bg-slate-800/50 text-slate-400 border border-transparent'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          const next = isChecked
+                            ? current.filter(c => c !== item.id)
+                            : [...current, item.id];
+                          if (next.length > 0) {
+                            updateBox(selectedBox.id, { targetClasses: next });
+                          }
+                        }}
+                        className="mt-0.5 w-3.5 h-3.5 rounded border-slate-700 bg-slate-850 text-cyan-500 focus:ring-0 focus:ring-offset-0 accent-cyan-500 cursor-pointer shrink-0"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold flex items-center gap-1.5 text-slate-200">
+                          <span>{item.icon}</span>
+                          <span>{item.label}</span>
+                        </span>
+                        <span className="text-[9px] text-slate-500 leading-tight">{item.desc}</span>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

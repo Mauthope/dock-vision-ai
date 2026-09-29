@@ -35,20 +35,22 @@ export interface DockBox {
   overlapThreshold: number; // 0.1 a 0.8 (default 0.20)
   entryDebounceFrames: number; // frames consecutivos necessários para confirmar entrada (default 3)
   exitGraceSeconds: number; // segundos de tolerância de ausência antes de considerar saída (default 3.0)
-  targetClasses: string[]; // ['truck', 'bus', 'car']
+  targetClasses: string[]; // ['truck', 'bus', 'car', 'person', 'motion']
   // Contadores internos de histerese:
   consecutiveDetections?: number;
   consecutiveAbsences?: number;
 }
 
+export type DetectionClassType = 'truck' | 'bus' | 'car' | 'person' | 'motion';
+
 export interface TruckDetection {
   bbox: [number, number, number, number]; // [x, y, width, height] em pixels do frame
   normalizedBbox: [number, number, number, number]; // [x, y, w, h] normalizado 0 a 1
-  class: string; // 'truck' | 'car' | 'bus'
-  label: string; // "Caminhão", "Carro", "Ônibus"
+  class: 'truck' | 'car' | 'bus' | 'person' | 'motion' | string;
+  label: string; // "Caminhão", "Carro", "Ônibus", "Pessoa", "Movimento"
   score: number;
   centroid: Point2D;
-  groundContact: Point2D; // Ponto das rodas tocando o solo
+  groundContact: Point2D; // Ponto das rodas ou pés tocando o solo
 }
 
 export interface TruckRecord {
@@ -79,11 +81,13 @@ export interface CameraSourceConfig {
 }
 
 export interface DockSettings {
-  confidenceThreshold: number; // default 0.45
-  inferenceIntervalMs: number; // default 250ms
+  confidenceThreshold: number; // default 0.38
+  inferenceIntervalMs: number; // default 380ms
   allowTruck: boolean;
   allowBus: boolean;
   allowCar: boolean;
+  allowPerson: boolean;
+  allowMotion: boolean;
   soundAlerts: boolean;
   autoSaveSnapshots: boolean;
   targetStayMinutes: number; // meta de tempo por caminhão (ex: 25 min)

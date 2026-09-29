@@ -67,6 +67,8 @@ const DEFAULT_SETTINGS: DockSettings = {
   allowTruck: true,
   allowBus: true,
   allowCar: true, // Habilitado globalmente para permitir controle granular por boxe
+  allowPerson: true,
+  allowMotion: true,
   soundAlerts: true,
   autoSaveSnapshots: false,
   targetStayMinutes: 25,
@@ -105,6 +107,7 @@ interface DockContextType {
   // Actions
   setActiveCameraId: (id: string) => void;
   setSelectedBoxId: (id: string | null) => void;
+  selectBoxAndCamera: (boxId: string) => void;
   updateSettings: (newSettings: Partial<DockSettings>) => void;
   addBox: (box: Omit<DockBox, 'id' | 'status' | 'currentTruck' | 'lastSession'>) => string;
   updateBox: (id: string, updates: Partial<DockBox>) => void;
@@ -196,6 +199,8 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
           allowCar: true, // Força true para não descartar caminhões detectados como car
           allowTruck: true,
           allowBus: true,
+          allowPerson: parsedStg.allowPerson ?? true,
+          allowMotion: parsedStg.allowMotion ?? true,
         }));
       }
 
@@ -323,6 +328,8 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (cls === 'truck' && settings.allowTruck) return true;
       if (cls === 'bus' && settings.allowBus) return true;
       if (cls === 'car' && settings.allowCar) return true;
+      if (cls === 'person' && settings.allowPerson) return true;
+      if (cls === 'motion' && settings.allowMotion) return true;
       return false;
     });
 
@@ -338,14 +345,14 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       const counters = boxCountersRef.current[box.id];
 
-      // Avalia se há veículo permitido para este boxe dentro dele
+      // Avalia se há veículo/pessoa/movimento permitido para este boxe dentro dele
       let foundInside: TruckDetection | null = null;
       let bestOverlap = 0;
       const boxAllowed = box.targetClasses || ['truck', 'bus'];
 
       for (let i = 0; i < allowedDetections.length; i++) {
         const det = allowedDetections[i];
-        // Se o boxe não aceita essa classe de veículo, ignora!
+        // Se o boxe não aceita essa classe de detecção, ignora!
         if (!boxAllowed.includes(det.class)) continue;
 
         const evalRes = isTruckInsideDockBox(det, box);
@@ -363,6 +370,13 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         counters.consecutiveAbsences = 0;
         counters.lastSeenTime = now;
 
+        const defaultLabel = foundInside.label || (
+          foundInside.class === 'truck' ? 'Caminhão' :
+          foundInside.class === 'person' ? 'Pessoa' :
+          foundInside.class === 'motion' ? 'Movimento' :
+          foundInside.class === 'bus' ? 'Ônibus/Van' : 'Veículo'
+        );
+
         if (box.status === 'empty') {
           if (counters.consecutiveDetections >= debounceThreshold) {
             // CONFIRMADO: Vazio -> Ocupado
@@ -375,7 +389,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 entryTime: now,
                 durationSeconds: 0,
                 confidence: foundInside.score,
-                label: foundInside.label || (foundInside.class === 'truck' ? 'Caminhão' : 'Veículo'),
+                label: defaultLabel,
                 lastSeenTime: now,
               }
             };
@@ -394,7 +408,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 entryTime: now,
                 durationSeconds: 0,
                 confidence: foundInside.score,
-                label: foundInside.class,
+                label: defaultLabel,
                 lastSeenTime: now,
               }
             };
@@ -654,6 +668,15 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [boxes, records]);
 
+  // Selecionar boxe e mudar automaticamente para a câmera responsável por ele
+  const selectBoxAndCamera = useCallback((boxId: string) => {
+    setSelectedBoxId(boxId);
+    const box = boxesRef.current.find(b => b.id === boxId);
+    if (box && box.cameraId && box.cameraId !== activeCameraId) {
+      setActiveCameraId(box.cameraId);
+    }
+  }, [activeCameraId]);
+
   return (
     <DockContext.Provider
       value={{
@@ -666,6 +689,7 @@ export const DockProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeDeviceId,
         setActiveCameraId,
         setSelectedBoxId,
+        selectBoxAndCamera,
         updateSettings,
         addBox,
         updateBox,

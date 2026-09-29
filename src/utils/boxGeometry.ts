@@ -278,6 +278,30 @@ export function isTruckInsideDockBox(
   const isGroundInside = isPointInPolygon(groundContact, points);
   const isCentroidInside = isPointInPolygon(centroid, points);
 
+  // 1. TRATAMENTO ESPECÍFICO PARA MOVIMENTO
+  if (detection.class === 'motion') {
+    return {
+      isInside: true,
+      overlap: 1.0,
+      dockCoverage: detection.score,
+      reason: `Movimento detectado: ${(detection.score * 100).toFixed(0)}% de intensidade`
+    };
+  }
+
+  // 2. TRATAMENTO ESPECÍFICO PARA PESSOAS / PEDESTRES
+  // Pessoas ocupam pequena porcentagem da doca. Seus pés (ground) ou corpo (centroide) dentro do boxe confirmam presença!
+  if (detection.class === 'person') {
+    const isPersonInside = isGroundInside || isCentroidInside || truckOverlap >= 0.25;
+    return {
+      isInside: isPersonInside,
+      overlap: Math.max(truckOverlap, dockCoverage),
+      dockCoverage,
+      reason: isPersonInside
+        ? 'Pessoa identificada dentro da vaga'
+        : 'Pessoa fora da vaga'
+    };
+  }
+
   const criteria = dockBox.detectionCriteria || 'auto';
   const threshold = dockBox.overlapThreshold ?? 0.20;
 
