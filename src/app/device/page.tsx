@@ -118,7 +118,7 @@ function DeviceTerminalContent() {
                   : 'bg-emerald-600 hover:bg-emerald-500 text-slate-950'
               }`}
             >
-              {isOccupied ? 'Finalizar Atendimento Manualmente' : 'Registrar Entrada Manual'}
+              {isOccupied ? 'Encerrar cronômetro' : 'Iniciar cronômetro'}
             </button>
           </div>
         ) : (

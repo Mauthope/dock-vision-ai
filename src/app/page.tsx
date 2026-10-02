@@ -63,14 +63,14 @@ export default function HomePage() {
           <div className="col-span-1 lg:col-span-5 xl:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
             
             {/* Card: Status em Tempo Real dos Boxes */}
-            <div className="p-4 rounded-2xl glass-panel border border-slate-800 shadow-xl flex flex-col gap-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                <span className="text-xs uppercase font-bold tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-cyan-400" />
-                  Docas Monitoradas ({boxes.length})
+            <div className="p-4 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col gap-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                <span className="text-xs uppercase font-bold tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                  Docas monitoradas ({boxes.length})
                 </span>
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                  Ao Vivo
+                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800/40">
+                  Ao vivo
                 </span>
               </div>
 
@@ -89,48 +89,48 @@ export default function HomePage() {
                       onClick={() => selectBoxAndCamera(box.id)}
                       className={`p-3 rounded-xl border transition-all flex flex-col gap-2 cursor-pointer ${
                         isSelected
-                          ? 'border-cyan-400 bg-cyan-950/30 ring-1 ring-cyan-500/50 shadow-lg shadow-cyan-950/40'
+                          ? 'border-cyan-500 bg-cyan-50/70 dark:bg-cyan-950/30 ring-1 ring-cyan-500/50 shadow-lg shadow-cyan-950/20'
                           : isOcc
-                          ? 'bg-rose-950/30 border-rose-500/60 shadow-lg shadow-rose-950/20 hover:border-rose-400'
+                          ? 'bg-rose-50/60 dark:bg-rose-950/30 border-rose-300 dark:border-rose-500/60 shadow-lg shadow-rose-950/10 hover:border-rose-400'
                           : isApp
-                          ? 'bg-amber-950/30 border-amber-500/50 hover:border-amber-400'
-                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                          ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-300 dark:border-amber-500/50 hover:border-amber-400'
+                          : 'bg-slate-50/70 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                       title={`Clique para alternar para a câmera "${cam?.name || box.cameraId}" e gerenciar ${box.name}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           <span
-                            className="w-3 h-3 rounded-full shrink-0"
+                            className="w-3 h-3 rounded-full shrink-0 shadow-sm"
                             style={{ backgroundColor: box.color }}
                           />
-                          <span className="font-bold text-sm text-white truncate">{box.name}</span>
+                          <span className="font-bold text-sm text-slate-900 dark:text-white truncate">{box.name}</span>
                         </div>
 
                         {isOcc ? (
-                          <span className="text-[10px] font-bold text-rose-300 bg-rose-950 px-2 py-0.5 rounded-full border border-rose-800 flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] font-bold text-rose-800 dark:text-rose-300 bg-rose-100 dark:bg-rose-950 px-2 py-0.5 rounded-full border border-rose-300 dark:border-rose-800 flex items-center gap-1 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                             Ocupado
                           </span>
                         ) : isApp ? (
-                          <span className="text-[10px] font-bold text-amber-300 bg-amber-950 px-2 py-0.5 rounded-full border border-amber-800 shrink-0">
+                          <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800 shrink-0">
                             Aproximando
                           </span>
                         ) : (
-                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800 shrink-0">
+                          <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800 shrink-0">
                             Livre
                           </span>
                         )}
                       </div>
 
                       {/* Identificação da Câmera Vinculada */}
-                      <div className="flex items-center justify-between text-[11px] text-slate-400">
-                        <span className="flex items-center gap-1 truncate text-slate-400">
-                          <Eye className="w-3 h-3 text-cyan-400 shrink-0" />
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1 truncate">
+                          <Eye className="w-3 h-3 text-cyan-600 dark:text-cyan-400 shrink-0" />
                           <span className="truncate">{cam ? cam.name : box.cameraId}</span>
                         </span>
                         {!isCurrentCam && (
-                          <span className="text-[9px] font-semibold text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40 shrink-0">
+                          <span className="text-[9px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-300 dark:border-cyan-800/40 shrink-0">
                             Ver Câmera
                           </span>
                         )}
@@ -141,24 +141,24 @@ export default function HomePage() {
                         {(box.targetClasses || ['truck', 'bus']).map(cls => (
                           <span
                             key={cls}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono flex items-center gap-1"
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-mono flex items-center gap-1"
                           >
-                            {cls === 'truck' ? <><Truck className="w-2.5 h-2.5 text-cyan-400" /> Caminhão</> :
-                             cls === 'bus' ? <><Bus className="w-2.5 h-2.5 text-teal-400" /> Van</> :
-                             cls === 'person' ? <><User className="w-2.5 h-2.5 text-sky-400" /> Pessoa</> :
-                             cls === 'motion' ? <><Activity className="w-2.5 h-2.5 text-amber-400" /> Movimento</> :
-                             <><Car className="w-2.5 h-2.5 text-purple-400" /> Carro</>}
+                            {cls === 'truck' ? <><Truck className="w-2.5 h-2.5 text-cyan-600 dark:text-cyan-400" /> Caminhão</> :
+                             cls === 'bus' ? <><Bus className="w-2.5 h-2.5 text-teal-600 dark:text-teal-400" /> Van</> :
+                             cls === 'person' ? <><User className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" /> Pessoa</> :
+                             cls === 'motion' ? <><Activity className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" /> Movimento</> :
+                             <><Car className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" /> Carro</>}
                           </span>
                         ))}
                       </div>
 
                       {/* Cronômetro se Ocupado */}
                       {isOcc && (
-                        <div className="p-2 rounded-lg bg-slate-950 border border-rose-900/50 flex items-center justify-between">
-                          <span className="text-xs text-slate-400">
-                            {box.currentTruck?.label || 'Em Atendimento'}:
+                        <div className="p-2 rounded-lg bg-white dark:bg-slate-950 border border-rose-300 dark:border-rose-900/50 flex items-center justify-between">
+                          <span className="text-xs text-slate-600 dark:text-slate-400">
+                            {box.currentTruck?.label || 'Em atendimento'}:
                           </span>
-                          <span className="text-lg font-mono font-extrabold text-rose-400">
+                          <span className="text-lg font-mono font-extrabold text-rose-600 dark:text-rose-400">
                             {formatDuration(duration)}
                           </span>
                         </div>
@@ -166,9 +166,9 @@ export default function HomePage() {
 
                       {/* Último atendimento registrado */}
                       {!isOcc && box.lastSession && (
-                        <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1 border-t border-slate-900">
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-900">
                           <span>Última estadia:</span>
-                          <span className="font-mono text-cyan-300 font-semibold">
+                          <span className="font-mono text-cyan-700 dark:text-cyan-300 font-semibold">
                             {formatDuration(box.lastSession.durationSeconds)}
                           </span>
                         </div>
@@ -182,36 +182,36 @@ export default function HomePage() {
                         }}
                         className={`w-full py-1.5 rounded-lg text-xs font-semibold transition-all ${
                           isOcc
-                            ? 'bg-rose-900/40 hover:bg-rose-800/60 text-rose-200 border border-rose-700/50'
-                            : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                            ? 'bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-900/40 dark:hover:bg-rose-800/60 dark:text-rose-200 border border-rose-300 dark:border-rose-700/50'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
                         }`}
                       >
-                        {isOcc ? 'Finalizar Cronômetro Manual' : 'Simular Entrada Manual'}
+                        {isOcc ? 'Encerrar cronômetro' : 'Iniciar cronômetro'}
                       </button>
                     </div>
                   );
                 })}
 
                 {boxes.length === 0 && (
-                  <div className="text-center py-6 text-xs text-slate-500">
-                    Nenhum boxe cadastrado nesta câmera. Use os botões acima do vídeo para desenhar retângulos ou polígonos nas vagas.
+                  <div className="text-center py-8 text-xs text-slate-500">
+                    Nenhuma doca nesta câmera. Selecione um formato na barra acima para delimitar uma vaga.
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Card: Calibração de Precisão da IA (Garantindo 100% de detecção no boxe) */}
-            <div className="p-4 rounded-2xl glass-panel border border-slate-800 shadow-xl flex flex-col gap-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-800 text-xs font-bold text-slate-300 uppercase tracking-wider">
-                <Sliders className="w-4 h-4 text-cyan-400" />
-                <span>Calibração Fina de Detecção</span>
+            {/* Card: Calibração de Precisão da IA */}
+            <div className="p-4 rounded-2xl glass-panel border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col gap-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                <Sliders className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                <span>Calibração da IA</span>
               </div>
 
               {/* Limiar de Confiança */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Confiança Mínima IA</span>
-                  <span className="font-mono font-bold text-cyan-300">
+                  <span className="text-slate-600 dark:text-slate-400">Confiança mínima</span>
+                  <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300">
                     {(settings.confidenceThreshold * 100).toFixed(0)}%
                   </span>
                 </div>
@@ -222,15 +222,15 @@ export default function HomePage() {
                   step="0.05"
                   value={settings.confidenceThreshold}
                   onChange={e => updateSettings({ confidenceThreshold: parseFloat(e.target.value) })}
-                  className="w-full accent-cyan-400 cursor-pointer"
+                  className="w-full accent-cyan-500 dark:accent-cyan-400 cursor-pointer"
                 />
               </div>
 
               {/* Meta de Tempo por Boxe */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="text-slate-400">Meta de Estadia (Tempo Máx)</span>
-                  <span className="font-mono font-bold text-teal-300">
+                  <span className="text-slate-600 dark:text-slate-400">Meta de permanência</span>
+                  <span className="font-mono font-bold text-teal-700 dark:text-teal-300">
                     {settings.targetStayMinutes} min
                   </span>
                 </div>
@@ -241,72 +241,72 @@ export default function HomePage() {
                   step="5"
                   value={settings.targetStayMinutes}
                   onChange={e => updateSettings({ targetStayMinutes: parseInt(e.target.value) })}
-                  className="w-full accent-teal-400 cursor-pointer"
+                  className="w-full accent-teal-500 dark:accent-teal-400 cursor-pointer"
                 />
               </div>
 
               {/* Classes Permitidas Globalmente */}
-              <div className="flex flex-col gap-2 pt-1 border-t border-slate-800/80">
-                <span className="text-[11px] font-semibold text-slate-400">Classes Monitoradas na IA:</span>
+              <div className="flex flex-col gap-2 pt-1 border-t border-slate-200 dark:border-slate-800/80">
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Classes de detecção:</span>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.allowTruck}
                       onChange={e => updateSettings({ allowTruck: e.target.checked })}
-                      className="accent-cyan-400 rounded cursor-pointer"
+                      className="accent-cyan-500 dark:accent-cyan-400 rounded cursor-pointer"
                     />
-                    <Truck className="w-3.5 h-3.5 text-cyan-400" />
+                    <Truck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                     <span>Caminhão</span>
                   </label>
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.allowBus}
                       onChange={e => updateSettings({ allowBus: e.target.checked })}
-                      className="accent-cyan-400 rounded cursor-pointer"
+                      className="accent-cyan-500 dark:accent-cyan-400 rounded cursor-pointer"
                     />
-                    <Bus className="w-3.5 h-3.5 text-teal-400" />
+                    <Bus className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                     <span>Ônibus/Van</span>
                   </label>
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.allowCar}
                       onChange={e => updateSettings({ allowCar: e.target.checked })}
-                      className="accent-cyan-400 rounded cursor-pointer"
+                      className="accent-cyan-500 dark:accent-cyan-400 rounded cursor-pointer"
                     />
-                    <Car className="w-3.5 h-3.5 text-purple-400" />
+                    <Car className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                     <span>Carro</span>
                   </label>
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                  <label className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={settings.allowPerson}
                       onChange={e => updateSettings({ allowPerson: e.target.checked })}
-                      className="accent-cyan-400 rounded cursor-pointer"
+                      className="accent-cyan-500 dark:accent-cyan-400 rounded cursor-pointer"
                     />
-                    <User className="w-3.5 h-3.5 text-sky-400" />
+                    <User className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                     <span>Pessoa</span>
                   </label>
-                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer col-span-2">
+                  <label className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer col-span-2">
                     <input
                       type="checkbox"
                       checked={settings.allowMotion}
                       onChange={e => updateSettings({ allowMotion: e.target.checked })}
-                      className="accent-cyan-400 rounded cursor-pointer"
+                      className="accent-cyan-500 dark:accent-cyan-400 rounded cursor-pointer"
                     />
-                    <Activity className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Qualquer Movimento</span>
+                    <Activity className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Qualquer movimento</span>
                   </label>
                 </div>
               </div>
 
               {/* Informação Técnica de Precisão */}
-              <div className="p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-900/40 text-[11px] text-cyan-300/90 flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="p-2.5 rounded-xl bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/40 text-[11px] text-cyan-900 dark:text-cyan-300/90 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
                 <span>
-                  Algoritmo <strong>Ray-Casting + Ponto de Contato no Solo</strong> ativado: a detecção só dispara quando os eixos do caminhão entram na vaga delimitada.
+                  Algoritmo <strong>Ray-Casting</strong> ativo com ponto de contato no solo para acionamento na área delimitada.
                 </span>
               </div>
             </div>
