@@ -1,14 +1,14 @@
-# VisionAi 🚚⏱️ (Sistema Inteligente de Docas & Cronoanálise)
+# VisionAi - Sistema Inteligente de Docas e Cronoanalise
 
-Sistema Web responsivo de alta performance desenvolvido em **Next.js**, combinando o design moderno em **Dark Slate & Glassmorphism** (inspirado no projeto `Bahia`) com o poder do motor de **Visão Computacional em Tempo Real** (inspirado no projeto `Toten`).
+Sistema Web responsivo de alta performance desenvolvido em **Next.js**, combinando o design moderno em **Dark Slate & Glassmorphism** (inspirado no projeto `Bahia`) com o poder do motor de **Visão Computacional em Tempo Real** (inspirado no projeto `Toten`). Suporta alternância nativa entre temas Claro e Escuro (`next-themes`) e arquitetura modular multi-inquilinos.
 
-⚡ **Desenvolvido por Mauricio Grigol**
+**Desenvolvido por Mauricio Grigol**
 
 ---
 
-## ✨ Destaques & Principais Funcionalidades
+## Destaques e Principais Funcionalidades
 
-### 1. 🎯 Detecção 100% Precisa Estritamente Dentro dos Boxes Desenhados
+### 1. Deteccao Precisa Estritamente Dentro dos Boxes Desenhados
 A maior dificuldade histórica em sistemas de monitoramento por visão computacional é evitar disparos falsos causados por veículos apenas passando ao lado da vaga ou falsos encerramentos por oclusões temporárias. O **VisionAi** resolve isso combinando 4 camadas matemáticas:
 
 1. **Coordenadas Normalizadas (0.0 a 1.0)**:
@@ -25,21 +25,21 @@ A maior dificuldade histórica em sistemas de monitoramento por visão computaci
 
 ---
 
-### 2. ⏱️ Cronômetro em Tempo Real e Auditoria Automática
+### 2. Cronometro em Tempo Real e Auditoria Automatica
 * **Disparo Automático**: Ao detectar o caminhão atracado no boxe, o cronômetro inicia em tempo real com indicador visual pulsante.
 * **Liberação e Registro**: Quando o caminhão se retira, o tempo total é automaticamente gravado no histórico de auditoria com horários exatos de entrada, saída, duração formatada (`MM:SS`) e nível de confiança da IA.
 * **Alertas Sonoros Industriais**: Bipes sintetizados via Web Audio API (sem dependência de arquivos externos).
 
 ---
 
-### 3. 📊 Dashboard Executivo & Gestão Lean / Kaizen
+### 3. Dashboard Executivo e Gestao Lean / Kaizen
 * **Tempo Médio de Permanência por Boxe**: Comparado diretamente com a meta industrial de atendimento.
 * **Taxa de Ocupação Instantânea**: Visualização das docas livres e em carregamento.
 * **Exportação Completa**: Download de relatórios em formato CSV (compatível com Excel) e backup JSON em 1 clique.
 
 ---
 
-### 4. 📱 Interatividade Multi-Aparelho & Preparado para Câmeras IP
+### 4. Interatividade Multi-Aparelho e Preparado para Cameras IP
 * **Smartphones Conectados**: Qualquer operador com celular pode abrir o link gerado, ligar a câmera traseira e transformar o aparelho na Câmera do "Boxe 1" ou "Pátio Geral".
 * **Sincronização em Tempo Real**: As detecções feitas no celular são refletidas instantaneamente no painel da guarita ou sala de controle via `BroadcastChannel` e API de sincronização.
 * **Pronto para Câmeras IP Industriais**:
@@ -49,7 +49,7 @@ A maior dificuldade histórica em sistemas de monitoramento por visão computaci
 
 ---
 
-## 💻 Como Rodar o Projeto
+## Como Rodar o Projeto
 
 ```bash
 # 1. Instalar as dependências (já instaladas)

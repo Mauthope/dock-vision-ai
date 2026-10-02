@@ -10,6 +10,10 @@ import { useDock } from '@/context/DockContext';
 import { formatDuration } from '@/utils/boxGeometry';
 import {
   Truck,
+  Bus,
+  Car,
+  User,
+  Activity,
   ShieldCheck,
   Zap,
   Sliders,
@@ -137,12 +141,13 @@ export default function HomePage() {
                         {(box.targetClasses || ['truck', 'bus']).map(cls => (
                           <span
                             key={cls}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono"
+                            className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-mono flex items-center gap-1"
                           >
-                            {cls === 'truck' ? '🚚 Caminhão' :
-                             cls === 'bus' ? '🚌 Van' :
-                             cls === 'person' ? '👤 Pessoa' :
-                             cls === 'motion' ? '⚡ Movimento' : '🚗 Carro'}
+                            {cls === 'truck' ? <><Truck className="w-2.5 h-2.5 text-cyan-400" /> Caminhão</> :
+                             cls === 'bus' ? <><Bus className="w-2.5 h-2.5 text-teal-400" /> Van</> :
+                             cls === 'person' ? <><User className="w-2.5 h-2.5 text-sky-400" /> Pessoa</> :
+                             cls === 'motion' ? <><Activity className="w-2.5 h-2.5 text-amber-400" /> Movimento</> :
+                             <><Car className="w-2.5 h-2.5 text-purple-400" /> Carro</>}
                           </span>
                         ))}
                       </div>
@@ -251,7 +256,8 @@ export default function HomePage() {
                       onChange={e => updateSettings({ allowTruck: e.target.checked })}
                       className="accent-cyan-400 rounded cursor-pointer"
                     />
-                    <span>🚚 Caminhão</span>
+                    <Truck className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Caminhão</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
                     <input
@@ -260,7 +266,8 @@ export default function HomePage() {
                       onChange={e => updateSettings({ allowBus: e.target.checked })}
                       className="accent-cyan-400 rounded cursor-pointer"
                     />
-                    <span>🚌 Ônibus/Van</span>
+                    <Bus className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Ônibus/Van</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
                     <input
@@ -269,7 +276,8 @@ export default function HomePage() {
                       onChange={e => updateSettings({ allowCar: e.target.checked })}
                       className="accent-cyan-400 rounded cursor-pointer"
                     />
-                    <span>🚗 Carro</span>
+                    <Car className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Carro</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
                     <input
@@ -278,7 +286,8 @@ export default function HomePage() {
                       onChange={e => updateSettings({ allowPerson: e.target.checked })}
                       className="accent-cyan-400 rounded cursor-pointer"
                     />
-                    <span>👤 Pessoa</span>
+                    <User className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Pessoa</span>
                   </label>
                   <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer col-span-2">
                     <input
@@ -287,7 +296,8 @@ export default function HomePage() {
                       onChange={e => updateSettings({ allowMotion: e.target.checked })}
                       className="accent-cyan-400 rounded cursor-pointer"
                     />
-                    <span>⚡ Qualquer Movimento</span>
+                    <Activity className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Qualquer Movimento</span>
                   </label>
                 </div>
               </div>

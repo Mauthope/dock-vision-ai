@@ -69,7 +69,7 @@ function DeviceTerminalContent() {
             <option value="all">Visão Geral (Todas as Docas)</option>
             {boxes.map(b => (
               <option key={b.id} value={b.id}>
-                {b.name} {b.status === 'occupied' ? '🔴 (Ocupado)' : '🟢 (Livre)'}
+                {b.name} {b.status === 'occupied' ? '[Ocupado]' : '[Livre]'}
               </option>
             ))}
           </select>

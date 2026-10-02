@@ -1,18 +1,21 @@
 import type { Metadata } from 'next';
 import { Outfit, Inter } from 'next/font/google';
 import './globals.css';
+import { ThemeProvider } from '@/components/providers/theme-provider';
+import { TenantProvider } from '@/components/providers/tenant-provider';
 import { DockProvider } from '@/context/DockContext';
 
 const outfit = Outfit({
   subsets: ['latin'],
   variable: '--font-outfit',
-  weight: ['300', '400', '500', '600', '700', '800'],
+  weight: ['400', '500', '600', '700', '800'],
   display: 'swap',
 });
 
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+  weight: ['400', '500', '600', '700'],
   display: 'swap',
 });
 
@@ -28,11 +31,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body className={`${outfit.variable} ${inter.variable} font-sans bg-[#060a13] text-slate-100 min-h-screen antialiased flex flex-col selection:bg-cyan-500 selection:text-slate-950`}>
-        <DockProvider>
-          {children}
-        </DockProvider>
+    <html lang="pt-BR" className={`${outfit.variable} ${inter.variable}`} suppressHydrationWarning>
+      <body className="antialiased min-h-screen flex flex-col custom-scrollbar selection:bg-cyan-500 selection:text-slate-950">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TenantProvider>
+            <DockProvider>
+              {children}
+            </DockProvider>
+          </TenantProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

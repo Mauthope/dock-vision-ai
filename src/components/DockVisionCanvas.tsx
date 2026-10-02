@@ -33,7 +33,12 @@ import {
   Zap,
   Shield,
   Gauge,
-  Activity
+  Activity,
+  Scale,
+  Car,
+  User,
+  Bus,
+  Camera
 } from 'lucide-react';
 
 export const DockVisionCanvas: React.FC = () => {
@@ -598,8 +603,8 @@ export const DockVisionCanvas: React.FC = () => {
           ctx.stroke();
         }
 
-        // Badge de identificação com classe autêntica
-        const prefix = isPerson ? '👤 ' : isMotion ? '⚡ ' : isTruck ? '🚚 ' : isBus ? '🚌 ' : '🚗 ';
+        // Badge de identificacao com classe autentica
+        const prefix = isPerson ? '[PESSOA] ' : isMotion ? '[MOVIMENTO] ' : isTruck ? '[CAMINHAO] ' : isBus ? '[VAN] ' : '[CARRO] ';
         const label = `${prefix}${(det.label || 'Objeto').toUpperCase()} ${(det.score * 100).toFixed(0)}%`;
         ctx.font = 'bold 11px monospace';
         const labelW = ctx.measureText(label).width + 14;
@@ -893,7 +898,7 @@ export const DockVisionCanvas: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Enquadramento da Câmera:</span>
                 <span className="text-[10px] text-cyan-400 font-mono font-bold">
-                  {selectedBox.detectionCriteria === 'close_dock' ? '📷 Doca Próxima' : selectedBox.detectionCriteria === 'ground' ? '🔭 Pátio Amplo' : '⚡ Auto Híbrido'}
+                  {selectedBox.detectionCriteria === 'close_dock' ? 'Doca Próxima' : selectedBox.detectionCriteria === 'ground' ? 'Pátio Amplo' : 'Auto Híbrido'}
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-1">
@@ -907,7 +912,7 @@ export const DockVisionCanvas: React.FC = () => {
                   }`}
                   title="Detecta tanto visão de doca próxima quanto visão ampla de pátio"
                 >
-                  ⚡ Auto
+                  Auto
                 </button>
                 <button
                   type="button"
@@ -919,7 +924,7 @@ export const DockVisionCanvas: React.FC = () => {
                   }`}
                   title="Câmera próxima à doca: detecta mesmo quando a cabine fica fora do vídeo ou o caminhão corta a tela"
                 >
-                  📷 Doca Próxima
+                  Doca Próxima
                 </button>
                 <button
                   type="button"
@@ -931,15 +936,15 @@ export const DockVisionCanvas: React.FC = () => {
                   }`}
                   title="Câmera ampla: exige caminhão inteiro e rodas no solo da vaga"
                 >
-                  🔭 Pátio Amplo
+                  Pátio Amplo
                 </button>
               </div>
               <p className="text-[9px] text-slate-400 leading-tight">
                 {selectedBox.detectionCriteria === 'close_dock'
-                  ? '📷 Doca Próxima: ativado quando a traseira/baú encosta na vaga, dispensando ver o caminhão inteiro.'
+                  ? 'Doca Próxima: ativado quando a traseira/baú encosta na vaga, dispensando ver o caminhão inteiro.'
                   : selectedBox.detectionCriteria === 'ground'
-                  ? '🔭 Pátio Amplo: exige o caminhão inteiro e suas rodas dentro da demarcação.'
-                  : '⚡ Híbrido Inteligente: ideal para qualquer distância, detecta atracamento em doca ou estacionamento completo.'}
+                  ? 'Pátio Amplo: exige o caminhão inteiro e suas rodas dentro da demarcação.'
+                  : 'Híbrido Inteligente: ideal para qualquer distância, detecta atracamento em doca ou estacionamento completo.'}
               </p>
             </div>
 
@@ -1002,14 +1007,15 @@ export const DockVisionCanvas: React.FC = () => {
 
               <div className="flex flex-col gap-1.5 bg-slate-900/80 p-2 rounded-xl border border-slate-800/80">
                 {[
-                  { id: 'truck', label: 'Caminhão', icon: '🚚', desc: 'Carretas, baús, trucks e semirreboques' },
-                  { id: 'bus', label: 'Ônibus / Van', icon: '🚌', desc: 'Vans de carga e furgões de entrega' },
-                  { id: 'car', label: 'Carro Comum', icon: '🚗', desc: 'Veículos leves e utilitários (VUCs)' },
-                  { id: 'person', label: 'Pessoa / Pedestre', icon: '👤', desc: 'Conferentes, motoristas ou pedestres' },
-                  { id: 'motion', label: 'Qualquer Movimento', icon: '⚡', desc: 'Portas abrindo, empilhadeiras, pallets, etc.' },
+                  { id: 'truck', label: 'Caminhão', icon: Truck, iconColor: 'text-cyan-400', desc: 'Carretas, baús, trucks e semirreboques' },
+                  { id: 'bus', label: 'Ônibus / Van', icon: Bus, iconColor: 'text-teal-400', desc: 'Vans de carga e furgões de entrega' },
+                  { id: 'car', label: 'Carro Comum', icon: Car, iconColor: 'text-purple-400', desc: 'Veículos leves e utilitários (VUCs)' },
+                  { id: 'person', label: 'Pessoa / Pedestre', icon: User, iconColor: 'text-sky-400', desc: 'Conferentes, motoristas ou pedestres' },
+                  { id: 'motion', label: 'Qualquer Movimento', icon: Activity, iconColor: 'text-amber-400', desc: 'Portas abrindo, empilhadeiras, pallets, etc.' },
                 ].map(item => {
                   const current = selectedBox.targetClasses || ['truck', 'bus', 'person'];
                   const isChecked = current.includes(item.id);
+                  const IconComp = item.icon;
 
                   return (
                     <label
@@ -1033,7 +1039,7 @@ export const DockVisionCanvas: React.FC = () => {
                       />
                       <div className="flex flex-col">
                         <span className="text-xs font-semibold flex items-center gap-1.5 text-slate-200">
-                          <span>{item.icon}</span>
+                          <IconComp className={`w-3.5 h-3.5 ${item.iconColor}`} />
                           <span>{item.label}</span>
                         </span>
                         <span className="text-[9px] text-slate-500 leading-tight">{item.desc}</span>
@@ -1071,10 +1077,10 @@ export const DockVisionCanvas: React.FC = () => {
                             : 'text-emerald-400'
                         }`}>
                           {panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03)
-                            ? '🔴 Disparando'
+                            ? 'Disparando'
                             : panelMotionLevel >= (selectedBox.motionThreshold ?? 0.03) * 0.7
-                            ? '🟡 Variação Leve'
-                            : '🟢 Estável / Silencioso'}
+                            ? 'Variação Leve'
+                            : 'Estável / Silencioso'}
                         </span>
                       </div>
                       
@@ -1128,7 +1134,7 @@ export const DockVisionCanvas: React.FC = () => {
                           }`}
                           title="Dispara rápido com qualquer pequeno movimento (1.5% da vaga, 1 frame)"
                         >
-                          <span className="flex items-center gap-0.5">⚡ Alta</span>
+                          <span className="flex items-center gap-0.5"><Zap className="w-3 h-3 text-amber-400" /> Alta</span>
                           <span className="text-[8px] font-normal opacity-80">1.5% | 1 frame</span>
                         </button>
 
@@ -1146,7 +1152,7 @@ export const DockVisionCanvas: React.FC = () => {
                           }`}
                           title="Equilibrado para docas de carga. Filtra ruídos de sensor (3.0% da vaga, 2 frames)"
                         >
-                          <span className="flex items-center gap-0.5">⚖️ Padrão</span>
+                          <span className="flex items-center gap-0.5"><Scale className="w-3 h-3 text-cyan-400" /> Padrão</span>
                           <span className="text-[8px] font-normal opacity-80">3.0% | 2 frames</span>
                         </button>
 
@@ -1164,7 +1170,7 @@ export const DockVisionCanvas: React.FC = () => {
                           }`}
                           title="Anti-ruído para áreas abertas, vento, sol e sombra (6.0% da vaga)"
                         >
-                          <span className="flex items-center gap-0.5">🛡️ Anti-Ruído</span>
+                          <span className="flex items-center gap-0.5"><Shield className="w-3 h-3 text-emerald-400" /> Anti-Ruído</span>
                           <span className="text-[8px] font-normal opacity-80">6.0% | Rígido</span>
                         </button>
                       </div>
@@ -1245,10 +1251,10 @@ export const DockVisionCanvas: React.FC = () => {
                         </span>
                         <span className="text-[9px] text-amber-300 font-mono font-semibold">
                           {(selectedBox.motionDebounceFrames ?? 2) === 1
-                            ? '⚡ 1 frame (Instantâneo)'
+                            ? '1 frame (Instantâneo)'
                             : (selectedBox.motionDebounceFrames ?? 2) === 2
-                            ? '🛡️ 2 frames (Confirmado)'
-                            : '⏱️ 3 frames (Estável)'}
+                            ? '2 frames (Confirmado)'
+                            : '3 frames (Estável)'}
                         </span>
                       </div>
                       <div className="grid grid-cols-3 gap-1">

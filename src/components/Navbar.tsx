@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { useDock } from '../context/DockContext';
+import { ThemeToggle } from './theme-toggle';
 
 interface NavbarProps {
   onOpenIPModal?: () => void;
@@ -134,6 +135,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenIPModal, onOpenDeviceModal
             >
               {settings.soundAlerts ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
+
+            {/* Alternador de Tema Claro / Escuro */}
+            <ThemeToggle />
 
             {/* Botão Câmera IP / Fontes */}
             {onOpenIPModal && (
